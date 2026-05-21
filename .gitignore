@@ -1,6 +1,8 @@
-# Production secrets / configs
+# Production secrets / configs — never commit the live config.
 server/config.php
+# Local working copies (but DO commit the *.example.php templates).
 *.local.php
+!*.local.example.php
 
 # Test environment
 tests/.env

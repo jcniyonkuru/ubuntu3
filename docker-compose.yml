@@ -1,0 +1,96 @@
+# Ubuntu 3.0 — Local development stack.
+#
+# Two containers: MariaDB + PHP/Apache. Both pinned to the same major versions
+# we run in production so behaviour matches.
+#
+# Usage:
+#   docker compose up -d        # start both containers (detached)
+#   docker compose logs -f      # tail logs
+#   docker compose down         # stop everything (keeps data volume)
+#   docker compose down -v      # stop and wipe the database (start fresh)
+#
+# Once running:
+#   PWA   →  http://localhost:8080
+#   Admin →  http://localhost:8080/admin/
+#   API   →  http://localhost:8080/api/health
+#
+# First-time setup, see LOCAL.md.
+
+services:
+
+  # ---------------------------------------------------------------
+  #  MariaDB — matches the version running in production.
+  # ---------------------------------------------------------------
+  db:
+    image: mariadb:10.11
+    container_name: ubuntu3-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ubuntu_me
+      MARIADB_USER:     ubuntu_me
+      MARIADB_PASSWORD: local-dev-pwd
+      MARIADB_ROOT_PASSWORD: local-root-pwd
+      # MariaDB 10.11+ requires explicit charset/collation for utf8mb4.
+      MARIADB_AUTO_UPGRADE: "1"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      # Data persists between container restarts. Use `docker compose down -v`
+      # to wipe and start fresh.
+      - ubuntu3_db_data:/var/lib/mysql
+      # Schema + migrations are mounted read-only so the init script can load them.
+      - ./server/sql:/sql:ro
+      # Init scripts run once, on first start (after the DB is created by the
+      # MARIADB_* env vars above). See docker/initdb/00-init.sh.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    # Expose port only on localhost so a curious laptop on the same Wi-Fi
+    # can't reach your dev DB.
+    ports:
+      - "127.0.0.1:3308:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ---------------------------------------------------------------
+  #  PHP + Apache — serves PWA, admin and API.
+  # ---------------------------------------------------------------
+  app:
+    image: php:8.2-apache
+    container_name: ubuntu3-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Install pdo_mysql + enable mod_rewrite at build time of the container.
+    command:
+      - bash
+      - -lc
+      - |
+        set -e
+        if [ ! -f /usr/local/etc/php/conf.d/done.flag ]; then
+          docker-php-ext-install -j$(nproc) pdo_mysql >/dev/null
+          a2enmod rewrite >/dev/null
+          a2dissite 000-default >/dev/null 2>&1 || true
+          a2ensite ubuntu3 >/dev/null
+          touch /usr/local/etc/php/conf.d/done.flag
+        fi
+        exec apache2-foreground
+    volumes:
+      # The project root — same layout as production /opt/ubuntu3.
+      - ./app:/var/www/app
+      - ./server:/var/www/server
+      # Bind-mount only the user-uploaded media path to a writable host folder.
+      - ./.data/storage:/var/www/server/storage
+      # Apache vhost.
+      - ./docker/apache.conf:/etc/apache2/sites-available/ubuntu3.conf:ro
+      # PHP runtime tuning (display errors, timezone, ...).
+      - ./docker/php.ini:/usr/local/etc/php/conf.d/zz-ubuntu3.ini:ro
+    ports:
+      - "127.0.0.1:8080:80"
+
+volumes:
+  ubuntu3_db_data:
+    name: ubuntu3_db_data
