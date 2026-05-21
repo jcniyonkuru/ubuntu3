@@ -1,0 +1,26 @@
+# Ubuntu 3.0 — Unattended Moodle sync (system crontab)
+#
+# This file lives on the Docker host and uses `docker exec` to run the
+# CLI script inside the ubuntu3-app container, where /var/www/server/config.php
+# is already mounted from the host's /opt/ubuntu3/config.php.
+#
+# Installation:
+#   sudo cp /opt/ubuntu3/server/bin/ubuntu3-moodle-cron /etc/cron.d/ubuntu3-moodle-cron
+#   sudo chmod 644 /etc/cron.d/ubuntu3-moodle-cron
+#   sudo touch /var/log/ubuntu3-moodle-cron.log
+#
+# To uninstall:
+#   sudo rm /etc/cron.d/ubuntu3-moodle-cron
+#
+# Each line of /etc/cron.d/<file> is:
+#   <minute> <hour> <day-of-month> <month> <day-of-week> <user> <command>
+#
+# Runs as root because `docker exec` requires the docker socket. Adjust the
+# schedule by editing the first 5 fields. Times use the server's local
+# timezone (run `date` or `timedatectl` to verify).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Daily at 02:15 — quiet mode prints one summary line + any errors.
+15 2 * * * root /usr/bin/docker exec ubuntu3-app php /var/www/server/bin/moodle-cron.php --quiet >> /var/log/ubuntu3-moodle-cron.log 2>&1

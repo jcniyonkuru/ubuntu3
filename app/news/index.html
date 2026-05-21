@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#B73B3F" />
+  <title>News from the field — Académie Ubuntu</title>
+  <meta name="description" content="Stories from trainers and participants of Académie Ubuntu's training programs." />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <style>
+    :root {
+      --brand: #B73B3F;
+      --brand-dark: #8C2D31;
+      --brand-tint: #FBEDED;
+      --bg: #FAFAFB;
+      --card: #FFFFFF;
+      --text: #1B1B1B;
+      --muted: #6B6B6B;
+      --border: #E6E6E8;
+      --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- masthead ---------- */
+    .masthead {
+      background: linear-gradient(160deg, var(--brand), var(--brand-dark));
+      color: #fff;
+      padding: 28px 20px 24px;
+      text-align: center;
+    }
+    .masthead__brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .masthead__brand img { width: 46px; height: 46px; }
+    .masthead h1 { margin: 4px 0 6px; font-size: 26px; font-weight: 700; letter-spacing: .2px; }
+    .masthead p { max-width: 620px; margin: 0 auto; color: rgba(255,255,255,.9); font-size: 14px; }
+
+    /* ---------- container ---------- */
+    .container { max-width: 760px; margin: 0 auto; padding: 18px 14px 60px; }
+
+    /* ---------- list ---------- */
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .list-item {
+      display: flex; align-items: stretch; gap: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: box-shadow .15s ease, border-color .15s ease, transform .04s ease;
+      text-align: left;
+      width: 100%;
+      font: inherit; color: inherit;
+    }
+    .list-item:hover { box-shadow: var(--shadow); border-color: var(--brand-tint); }
+    .list-item:active { transform: translateY(1px); }
+    .list-item__thumb {
+      width: 56px; height: 56px;
+      flex-shrink: 0;
+      background: var(--brand-tint);
+      color: var(--brand-dark);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .5px;
+      overflow: hidden;
+    }
+    .list-item__thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .list-item__body { flex: 1; min-width: 0; }
+    .list-item__title {
+      font-weight: 600;
+      line-height: 1.35;
+      margin: 0 0 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .list-item__meta {
+      color: var(--muted);
+      font-size: 12.5px;
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 4px 10px;
+    }
+    .list-item__meta svg { width: 13px; height: 13px; }
+    .list-item__name { font-weight: 600; color: #444; }
+    /* Right-justified stats group (views + likes) */
+    .list-item__stats {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 12px;
+      white-space: nowrap;
+    }
+    .list-item__stats .stat {
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+
+    /* ---------- detail ---------- */
+    .detail {
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .detail__close {
+      position: absolute;
+      top: 10px; right: 10px;
+      z-index: 2;
+      width: 36px; height: 36px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.92);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      transition: background .12s, color .12s, transform .04s;
+    }
+    .detail__close:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .detail__close:active { transform: scale(0.94); }
+    .detail__close svg { width: 18px; height: 18px; }
+    .detail__photo {
+      display: block; width: 100%;
+      max-height: 460px; object-fit: cover;
+      background: #F0F0F2;
+    }
+    .detail__body { padding: 16px 18px 18px; }
+    /* When there's no photo, give the close button room so it doesn't overlap text. */
+    .detail--no-photo .detail__body { padding-top: 52px; }
+    .detail__text {
+      margin: 0 0 14px;
+      font-size: 16.5px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .detail__audio { display: block; width: 100%; margin: 0 0 14px; border-radius: 8px; }
+    .detail__meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 8px 0 14px;
+      display: flex; flex-wrap: wrap;
+      gap: 6px 14px;
+      align-items: center;
+    }
+    .detail__meta .dot { color: var(--border); }
+    .detail__meta .name { color: var(--text); font-weight: 600; }
+    .detail__actions {
+      display: flex; align-items: center; gap: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .like-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 14px; font-weight: 600;
+      color: var(--text);
+      transition: background .12s ease, color .12s ease, border-color .12s ease;
+    }
+    .like-btn:hover { border-color: var(--brand); color: var(--brand); }
+    .like-btn[aria-pressed="true"] {
+      background: var(--brand-tint);
+      border-color: var(--brand);
+      color: var(--brand-dark);
+    }
+    .like-btn svg { width: 16px; height: 16px; }
+    .stat-views { color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+    .stat-views svg { width: 14px; height: 14px; }
+
+    /* ---------- states ---------- */
+    .state { text-align: center; padding: 40px 16px; color: var(--muted); }
+    .spinner {
+      display: inline-block; width: 24px; height: 24px;
+      border: 3px solid var(--brand-tint);
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn {
+      display: inline-block;
+      background: var(--brand); color: #fff;
+      padding: 9px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      border: 0; font-weight: 600; cursor: pointer; font-size: 14px;
+    }
+    .btn:hover { background: var(--brand-dark); }
+    .btn--ghost { background: transparent; color: var(--brand); border: 1px solid var(--brand-tint); }
+    .btn--ghost:hover { background: var(--brand-tint); }
+
+    /* ---------- footer ---------- */
+    .footer {
+      text-align: center; color: var(--muted); font-size: 13px;
+      padding: 20px 16px; border-top: 1px solid var(--border);
+      background: #fff;
+    }
+    .footer a { color: var(--brand); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead__brand">
+      <img src="/icon-192.png" alt="Académie Ubuntu" />
+    </div>
+    <h1>News from the field</h1>
+    <p>Stories from trainers and participants of Académie Ubuntu, in their own words.</p>
+  </header>
+
+  <main class="container">
+    <div id="status" class="state">
+      <div class="spinner" aria-label="Loading"></div>
+    </div>
+    <div id="list" class="list" hidden></div>
+    <div id="detail" hidden></div>
+    <div id="more" class="state" hidden>
+      <button class="btn btn--ghost" id="load-more" type="button">Load more</button>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>
+      © <span id="year"></span> Académie Ubuntu &middot;
+      <a href="https://www.academyubuntu.com">www.academyubuntu.com</a>
+    </p>
+  </footer>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var API_BASE = location.origin + '/api';
+    var ORIGIN   = location.origin;
+    var PAGE_SIZE = 12;
+
+    // Inline SVGs (keep things self-contained — no icon font fetch)
+    var SVG = {
+      eye:   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5 0-9.27 3.11-11 7.5C2.73 16.89 7 20 12 20s9.27-3.11 11-7.5C21.27 8.11 17 5 12 5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>',
+      heart: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+      heartOutline: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21z"/></svg>',
+      close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>'
+    };
+
+    var statusEl = document.getElementById('status');
+    var listEl   = document.getElementById('list');
+    var detailEl = document.getElementById('detail');
+    var moreEl   = document.getElementById('more');
+    var moreBtn  = document.getElementById('load-more');
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    var state = { page: 1, items: [], hasMore: false, loading: false, current: null };
+
+    // ---------- helpers ----------
+    function fmtDate(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d)) return iso;
+      try { return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }); }
+      catch (e) { return d.toDateString(); }
+    }
+    function el(tag, attrs, kids) {
+      var n = document.createElement(tag);
+      if (attrs) for (var k in attrs) {
+        if (k === 'class') n.className = attrs[k];
+        else if (k === 'html') n.innerHTML = attrs[k];
+        else if (k === 'text') n.textContent = attrs[k];
+        else if (k.indexOf('on') === 0 && typeof attrs[k] === 'function') n.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+        else n.setAttribute(k, attrs[k]);
+      }
+      if (kids != null) (Array.isArray(kids) ? kids : [kids]).forEach(function (c) {
+        if (c == null) return;
+        if (typeof c === 'string') n.appendChild(document.createTextNode(c));
+        else n.appendChild(c);
+      });
+      return n;
+    }
+    function snippet(text, n) {
+      text = (text || '').trim();
+      if (text.length <= n) return text;
+      return text.slice(0, n).replace(/\s+\S*$/, '') + '…';
+    }
+    // Remember locally-liked stories so the heart shows pressed without a server round-trip.
+    function readLikedSet() {
+      try { return new Set(JSON.parse(localStorage.getItem('ubuntu30-liked') || '[]')); }
+      catch (e) { return new Set(); }
+    }
+    function writeLikedSet(set) {
+      try { localStorage.setItem('ubuntu30-liked', JSON.stringify([].concat.apply([], [Array.from(set)]))); }
+      catch (e) {}
+    }
+
+    // ---------- list rendering ----------
+    function renderList() {
+      detailEl.hidden = true; detailEl.innerHTML = '';
+      listEl.hidden = false;
+      moreEl.hidden = !state.hasMore;
+      window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    }
+
+    function renderListItem(s) {
+      var thumb = el('div', { class: 'list-item__thumb' });
+      if (s.photoUrl) {
+        var img = el('img', { src: ORIGIN + s.photoUrl, alt: '', loading: 'lazy' });
+        thumb.appendChild(img);
+      } else if (s.audioUrl) {
+        thumb.textContent = 'AUDIO';
+      } else {
+        thumb.textContent = 'TXT';
+      }
+      var title = el('div', { class: 'list-item__title' }, snippet(s.text, 100) || '(no text)');
+      var meta = el('div', { class: 'list-item__meta' });
+      if (s.firstName) meta.appendChild(el('span', { class: 'list-item__name' }, s.firstName));
+      if (s.date) meta.appendChild(el('span', null, fmtDate(s.date)));
+      if (s.region) meta.appendChild(el('span', null, s.region));
+      // Right-justified stats (views + likes)
+      var stats = el('span', { class: 'list-item__stats' }, [
+        el('span', { class: 'stat', html: SVG.eye + ' ' + s.views }),
+        el('span', { class: 'stat', html: SVG.heart + ' ' + s.likes })
+      ]);
+      meta.appendChild(stats);
+
+      return el('button', {
+        class: 'list-item', type: 'button',
+        onClick: function () { openDetail(s); }
+      }, [thumb, el('div', { class: 'list-item__body' }, [title, meta])]);
+    }
+
+    function appendItems(items) {
+      items.forEach(function (s) { listEl.appendChild(renderListItem(s)); });
+    }
+
+    // ---------- detail rendering ----------
+    function openDetail(s) {
+      state.current = s;
+      // Hide list, show detail
+      listEl.hidden = true;
+      moreEl.hidden = true;
+      detailEl.hidden = false;
+      detailEl.innerHTML = '';
+
+      var liked = readLikedSet().has(s.id);
+
+      var likeBtn = el('button', {
+        class: 'like-btn', type: 'button',
+        'aria-pressed': liked ? 'true' : 'false',
+        onClick: function () { toggleLike(s, likeBtn, viewsEl); }
+      }, [
+        el('span', { html: liked ? SVG.heart : SVG.heartOutline }),
+        el('span', { class: 'like-count' }, String(s.likes || 0))
+      ]);
+
+      var viewsEl = el('span', { class: 'stat-views', html: SVG.eye + '<span class="views-count" style="margin-left:4px">' + (s.views || 0) + '</span>' });
+
+      var meta = el('div', { class: 'detail__meta' }, [
+        s.firstName ? el('span', { class: 'name' }, s.firstName) : null,
+        s.region   ? el('span', null, s.region) : null,
+        s.date     ? el('span', null, fmtDate(s.date)) : null
+      ].filter(Boolean));
+
+      var body = el('div', { class: 'detail__body' });
+      if (s.text)     body.appendChild(el('p', { class: 'detail__text' }, s.text));
+      if (s.audioUrl) {
+        var audio = el('audio', { class: 'detail__audio', controls: 'controls', preload: 'none' });
+        audio.src = ORIGIN + s.audioUrl;
+        body.appendChild(audio);
+      }
+      body.appendChild(meta);
+      body.appendChild(el('div', { class: 'detail__actions' }, [likeBtn, viewsEl]));
+
+      var card = el('div', { class: 'detail' + (s.photoUrl ? '' : ' detail--no-photo') });
+      card.appendChild(el('button', {
+        class: 'detail__close', type: 'button',
+        'aria-label': 'Close', title: 'Close',
+        onClick: closeDetail, html: SVG.close
+      }));
+      if (s.photoUrl) {
+        card.appendChild(el('img', { class: 'detail__photo', src: ORIGIN + s.photoUrl, alt: '' }));
+      }
+      card.appendChild(body);
+      detailEl.appendChild(card);
+
+      window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+
+      // Record a view (fire-and-forget); update counter when it returns
+      fetch(API_BASE + '/public/stories/' + s.id + '/view', { method: 'POST' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) return;
+          s.views = data.views;
+          var vc = detailEl.querySelector('.views-count');
+          if (vc) vc.textContent = data.views;
+          // Also update the list item we'll show when user comes back
+          syncListCard(s);
+        }).catch(function () {});
+    }
+
+    function closeDetail() {
+      state.current = null;
+      renderList();
+    }
+
+    function toggleLike(s, btn, viewsEl) {
+      btn.disabled = true;
+      fetch(API_BASE + '/public/stories/' + s.id + '/like', { method: 'POST' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) return;
+          s.likes = data.likes;
+          var liked = !!data.liked;
+          btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+          btn.querySelector('.like-count').textContent = data.likes;
+          btn.querySelector('span:first-child').innerHTML = liked ? SVG.heart : SVG.heartOutline;
+          var set = readLikedSet();
+          if (liked) set.add(s.id); else set.delete(s.id);
+          writeLikedSet(set);
+          syncListCard(s);
+        }).catch(function () {})
+        .then(function () { btn.disabled = false; });
+    }
+
+    /** Update the in-memory list card so the counts refresh when user returns. */
+    function syncListCard(s) {
+      // Re-render the list lazily on close; for now just keep s in state.items.
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].id === s.id) { state.items[i] = s; break; }
+      }
+      // Rebuild list DOM so counts are fresh
+      listEl.innerHTML = '';
+      appendItems(state.items);
+    }
+
+    // ---------- loading ----------
+    function showError(msg) {
+      statusEl.hidden = false;
+      statusEl.innerHTML = '';
+      statusEl.appendChild(el('p', null, msg || 'Could not load stories right now. Please try again later.'));
+      statusEl.appendChild(el('button', { class: 'btn', type: 'button', onClick: function () { location.reload(); } }, 'Retry'));
+    }
+
+    function load() {
+      if (state.loading) return;
+      state.loading = true;
+      if (state.page === 1) {
+        statusEl.hidden = false;
+        listEl.hidden = true;
+        statusEl.innerHTML = '<div class="spinner" aria-label="Loading"></div>';
+      } else {
+        moreBtn.disabled = true; moreBtn.textContent = 'Loading…';
+      }
+      fetch(API_BASE + '/public/stories?page=' + state.page + '&pageSize=' + PAGE_SIZE, {
+        headers: { 'Accept': 'application/json' }
+      }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(function (data) {
+        var items = (data && data.items) || [];
+        state.items = state.items.concat(items);
+        state.hasMore = !!data.hasMore;
+        statusEl.hidden = true;
+        listEl.hidden = false;
+        appendItems(items);
+        if (state.items.length === 0) {
+          statusEl.hidden = false;
+          statusEl.innerHTML = '';
+          statusEl.appendChild(el('p', null, 'No stories yet. Check back soon!'));
+        }
+        moreEl.hidden = !state.hasMore;
+        moreBtn.disabled = false; moreBtn.textContent = 'Load more';
+        state.page++;
+      }).catch(function () { showError(); })
+        .then(function () { state.loading = false; });
+    }
+
+    moreBtn.addEventListener('click', load);
+    load();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Production secrets / configs
+server/config.php
+*.local.php
+
+# Test environment
+tests/.env
+tests/.venv/
+tests/.pytest_cache/
+tests/__pycache__/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*~
+~$*
+.~lock.*
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / build artefacts (in case we add a build step later)
+node_modules/
+.npm/
+
+# Local-stack volumes
+.docker/
+.data/
+
+# Generated outputs we don't commit (regenerated from sources)
+# (We DO commit the user guides + architecture / data model docs;
+#  they're source of truth deliverables.)
+
+# Logs
+*.log
+storage/

@@ -1,0 +1,17 @@
+# Ubuntu 3.0 — API front controller
+RewriteEngine On
+
+# Force HTTPS (Apache must have mod_ssl and be behind a real cert)
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteRule ^ - [F,L]
+
+# Send every request through index.php (which reads PATH_INFO)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Deny dotfiles
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
