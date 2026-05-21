@@ -40,12 +40,12 @@ SELECT COUNT(*) AS merged_candidates FROM _purge_candidates;
 -- (2) Remove any candidate that is still referenced as author_id on any
 -- entity. Keeping them disabled is safer than orphaning audit trails.
 DELETE c FROM _purge_candidates c
-WHERE EXISTS (SELECT 1 FROM cohorts      x WHERE x.author_id = c.id)
-   OR EXISTS (SELECT 1 FROM `groups`     x WHERE x.author_id = c.id)
-   OR EXISTS (SELECT 1 FROM sessions     x WHERE x.author_id = c.id)
-   OR EXISTS (SELECT 1 FROM participants x WHERE x.author_id = c.id)
-   OR EXISTS (SELECT 1 FROM attendance   x WHERE x.author_id = c.id)
-   OR EXISTS (SELECT 1 FROM stories      x WHERE x.author_id = c.id);
+WHERE EXISTS (SELECT 1 FROM cohorts           x WHERE x.author_id = c.id)
+   OR EXISTS (SELECT 1 FROM `groups_`         x WHERE x.author_id = c.id)
+   OR EXISTS (SELECT 1 FROM training_sessions x WHERE x.author_id = c.id)
+   OR EXISTS (SELECT 1 FROM participants      x WHERE x.author_id = c.id)
+   OR EXISTS (SELECT 1 FROM attendance        x WHERE x.author_id = c.id)
+   OR EXISTS (SELECT 1 FROM stories           x WHERE x.author_id = c.id);
 
 -- (3) Also remove anything still pointed at by participants.user_id (should
 -- be zero after v0.3.5g, but belt-and-braces).
