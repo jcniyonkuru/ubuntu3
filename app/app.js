@@ -11,6 +11,12 @@
   //  Constants
   // ============================================================
 
+  // Visible app version. Bump this and the CACHE constant in
+  // service-worker.js together when cutting a release. Exposed on window
+  // so DevTools and tests can read it without parsing source.
+  const APP_VERSION = '0.3.7-dev';
+  window.UBUNTU3_VERSION = APP_VERSION;
+
   const SEX_OPTIONS = ['F', 'M', 'NB'];
   const AGE_RANGES = ['<18', '18-25', '26-35', '36-45', '46-60', '>60'];
 
@@ -3057,7 +3063,7 @@
     // App
     root.appendChild(el('div', { class: 'card' }, [
       el('h3', null, t('more.app')),
-      el('p', { class: 'small muted' }, t('more.version')),
+      el('p', { class: 'small muted' }, t('more.version', { v: APP_VERSION })),
       el('p', { class: 'small muted' }, t('more.installHint')),
       el('button', {
         class: 'btn btn--ghost btn--block',
