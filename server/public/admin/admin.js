@@ -1111,7 +1111,11 @@
         }
         countEl.textContent = shown + ' / ' + rows.length;
       }
-      search.addEventListener('input', applyFilter);
+      // Fire the filter on every plausible event so we don't depend on any
+      // one browser's behaviour for type=search inputs.
+      ['input', 'keyup', 'change', 'search'].forEach((evt) => {
+        search.addEventListener(evt, applyFilter);
+      });
       // Press Escape to clear, like a native search field.
       search.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && search.value !== '') {
