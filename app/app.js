@@ -940,7 +940,10 @@
 
     // 2) Last story
     {
-      const snippet = lastStory ? ((lastStory.text || '').trim().slice(0, 64) + ((lastStory.text || '').length > 64 ? '…' : '')) : null;
+      // Story text is HTML in v0.3.7+. Strip tags before truncating for the
+      // resume tile so the trainer sees a clean preview.
+      const lastStoryPlain = lastStory ? stripHtml(lastStory.text || '') : '';
+      const snippet = lastStory ? (lastStoryPlain.slice(0, 64) + (lastStoryPlain.length > 64 ? '…' : '')) : null;
       resumeRow.appendChild(resumeTile(
         'dash.resumeStory',
         lastStory ? '#/stories/' + lastStory.id + '/edit' : null,
@@ -2565,7 +2568,10 @@
         el('div', { class: 'list-item' }, [
           thumb,
           el('div', { class: 'grow' }, [
-            el('div', { class: 'list-item__title' }, s.text ? (s.text.length > 60 ? s.text.slice(0, 60) + '…' : s.text) : t('common.noText')),
+            el('div', { class: 'list-item__title' }, (() => {
+              const plain = stripHtml(s.text || '');
+              return plain ? (plain.length > 60 ? plain.slice(0, 60) + '…' : plain) : t('common.noText');
+            })()),
             el('div', { class: 'list-item__sub' }, [tag, formatDate(s.updatedAt), s.consent ? t('stories.hasConsent') : t('stories.noConsent')].filter(Boolean).join(' · '))
           ])
         ])
@@ -2664,9 +2670,12 @@
       }
     });
 
+    // v0.3.7 — long story text is now rich-text. Stores HTML in story.text.
+    const rtEditor = buildRichTextEditor(story.text || '', { placeholder: t('story.textPh') });
+
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
-      story.text = form.elements['text'].value.trim();
+      story.text = rtEditor.getHtml();
       story.sessionId = form.elements['sessionId'].value || null;
       story.participantId = form.elements['participantId'].value || null;
       story.consent = consentInput.checked;
@@ -2689,7 +2698,7 @@
       if (window.SYNC) window.SYNC.syncNow().catch(() => {});
       go('/stories');
     } }, [
-      fg(t('story.textLabel'), el('textarea', { name: 'text', placeholder: t('story.textPh') }, story.text || '')),
+      fg(t('story.textLabel'), rtEditor.wrapper),
       fg(t('story.photoLabel'), el('div', { class: 'row', style: 'gap:12px; align-items:center' }, [
         photoPreview,
         el('label', { class: 'btn btn--sm btn--soft' }, [
@@ -3213,6 +3222,198 @@
       style: 'margin-top:12px; color:var(--danger); border-color:var(--danger)',
       onClick
     }, label);
+  }
+
+  /**
+   * Build a small rich-text editor (B / I / bullet list / paragraph break).
+   * Returns { wrapper, getHtml, focus } so the caller can drop the wrapper
+   * into a form and read getHtml() on submit.
+   *
+   * Storage model: the editor saves rendered HTML in story.text. For backward
+   * compatibility with stories written before this commit (plain text), we
+   * detect "looks like plain text" and convert newlines to <br> on load.
+   * stripHtml() is the inverse used by list-preview helpers.
+   */
+  function buildRichTextEditor(initial, opts) {
+    opts = opts || {};
+    const placeholder = opts.placeholder || '';
+
+    // Convert legacy plain text → safe HTML so it renders as expected.
+    function loadInitial(raw) {
+      const s = String(raw || '');
+      // Heuristic: if the string contains any block-level or formatting tag,
+      // assume it's already HTML. Otherwise treat as plain text.
+      if (/<(p|br|ul|ol|li|strong|em|b|i|u|div|span)\b/i.test(s)) return s;
+      // Escape ‹ &  › and turn newlines into <br>.
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\r?\n/g, '<br>');
+    }
+
+    const editor = el('div', {
+      class: 'rt-editor',
+      contenteditable: 'true',
+      role: 'textbox',
+      'aria-multiline': 'true',
+      'data-placeholder': placeholder
+    });
+    editor.innerHTML = loadInitial(initial);
+
+    // Toolbar buttons — use execCommand. It's deprecated but universally
+    // supported in browsers we ship to (mobile Safari + Chrome) and is the
+    // cheapest way to get correct nested-list behaviour. When we outgrow it
+    // we'll swap in a DOM-mutating impl.
+    function tbBtn(label, cmd, title) {
+      return el('button', {
+        type: 'button',
+        class: 'rt-tb-btn',
+        title: title || label,
+        'aria-label': title || label,
+        // mousedown (not click) so the editor doesn't lose focus before exec
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand(cmd, false, null);
+        }
+      }, label);
+    }
+    // Save the current selection before opening the color picker (the
+    // native color dialog steals focus on some browsers).
+    let savedRange = null;
+    function saveSelection() {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) savedRange = sel.getRangeAt(0).cloneRange();
+    }
+    function restoreSelection() {
+      if (!savedRange) return;
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    }
+
+    // Font-size buttons step through HTML's 1–7 scale via execCommand. Two
+    // visible buttons (A− / A+) jump the current selection down to 2 or
+    // up to 5; tapping the same one twice still produces a visible change
+    // because each tap re-wraps with a fresh <font size> element.
+    function fontSizeBtn(label, size, title) {
+      return el('button', {
+        type: 'button',
+        class: 'rt-tb-btn',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand('fontSize', false, String(size));
+        }
+      }, label);
+    }
+
+    // Native color picker bound to a <font color="#hex"> via execCommand.
+    const colorInput = el('input', {
+      type: 'color', value: '#1B1B1B',
+      style: 'position:absolute; opacity:0; width:0; height:0; pointer-events:none'
+    });
+    colorInput.addEventListener('input', () => {
+      restoreSelection();
+      document.execCommand('foreColor', false, colorInput.value);
+    });
+    const colorBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-color',
+      title: t('rt.color') || 'Color',
+      'aria-label': t('rt.color') || 'Color',
+      onMousedown: (e) => {
+        // Capture the selection before the color dialog opens.
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        // Open the picker after the focus dance settles.
+        setTimeout(() => colorInput.click(), 0);
+      }
+    }, [
+      el('span', { style: 'font-weight:700' }, 'A'),
+      el('span', { class: 'rt-tb-color-swatch', style: 'background:' + colorInput.value }),
+    ]);
+
+    // Inline-SVG variant of tbBtn for the icon-only buttons (undo/redo).
+    function tbIconBtn(svgPath, cmd, title) {
+      const btn = el('button', {
+        type: 'button',
+        class: 'rt-tb-btn rt-tb-icon',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand(cmd, false, null);
+        }
+      });
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + svgPath + '</svg>';
+      return btn;
+    }
+    // Material-style undo / redo curl arrows.
+    const ICON_UNDO = '<path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>';
+    const ICON_REDO = '<path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>';
+
+    const toolbar = el('div', { class: 'rt-toolbar' }, [
+      tbBtn('B', 'bold',                t('rt.bold')      || 'Bold'),
+      tbBtn('I', 'italic',              t('rt.italic')    || 'Italic'),
+      tbBtn('U', 'underline',           t('rt.underline') || 'Underline'),
+      tbBtn('•', 'insertUnorderedList', t('rt.bullets')   || 'Bulleted list'),
+      tbBtn('¶', 'formatBlock',         t('rt.paragraph') || 'Paragraph'),
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      fontSizeBtn('A−', 2, t('rt.smaller') || 'Smaller'),
+      fontSizeBtn('A+', 5, t('rt.larger')  || 'Larger'),
+      colorBtn,
+      colorInput,
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      tbIconBtn(ICON_UNDO, 'undo', t('rt.undo') || 'Undo'),
+      tbIconBtn(ICON_REDO, 'redo', t('rt.redo') || 'Redo'),
+    ]);
+    // The "U" button uses execCommand('underline') with no value — wraps in <u>.
+    // The "¶" button needs a value, not just a command; handle it specially.
+    // (Find it by position: index 4 in the array above.)
+    const paraBtn = toolbar.children[4];
+    paraBtn.onmousedown = (e) => {
+      e.preventDefault();
+      editor.focus();
+      document.execCommand('formatBlock', false, 'p');
+    };
+    // Visual cue on the "U" button: render an underlined glyph.
+    const uBtn = toolbar.children[2];
+    if (uBtn) uBtn.style.textDecoration = 'underline';
+
+    // Keep the swatch in sync with the picker value as the user picks.
+    colorInput.addEventListener('change', () => {
+      const swatch = colorBtn.querySelector('.rt-tb-color-swatch');
+      if (swatch) swatch.style.background = colorInput.value;
+    });
+
+    const wrapper = el('div', { class: 'rt-wrapper' }, [toolbar, editor]);
+
+    function getHtml() {
+      // Normalise: trim, drop a single trailing <br> the browser may append.
+      let html = (editor.innerHTML || '').trim();
+      html = html.replace(/(<br\s*\/?>\s*)+$/i, '').trim();
+      // If the user typed nothing visible, return empty string so the
+      // existing "story.empty" check still fires.
+      const plain = stripHtml(html).trim();
+      if (!plain) return '';
+      return html;
+    }
+
+    return { wrapper, getHtml, focus: () => editor.focus() };
+  }
+
+  /** Strip HTML tags from a string — used in list previews + dashboard cards. */
+  function stripHtml(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.innerHTML = String(s);
+    return (d.textContent || d.innerText || '').replace(/\s+/g, ' ').trim();
   }
 
   /**
