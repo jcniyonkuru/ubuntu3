@@ -209,7 +209,10 @@ table.data th, table.data td {
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
-table.data th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+table.data th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; user-select: none; }
+table.data th:hover { color: var(--text); }
+table.data th.sorted { color: var(--brand); }
+table.data th .sort-indicator { font-size: 10px; opacity: .65; }
 table.data tr:hover td { background: #FAFAFB; }
 table.data td .pill { font-size: 11px; }
 .pill {
