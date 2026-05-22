@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Ubuntu 3.0 — pre-commit guard
+#
+# Refuses a commit when APP_VERSION in app/app.js and the CACHE constant in
+# app/service-worker.js disagree. Releasing means bumping both; this catches
+# the case where you bump one and forget the other.
+#
+# Install once:
+#     ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+# (Or run scripts/install-hooks.sh.)
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+APP_FILE=app/app.js
+SW_FILE=app/service-worker.js
+
+if [ ! -f "$APP_FILE" ] || [ ! -f "$SW_FILE" ]; then
+  exit 0   # nothing to guard against
+fi
+
+# Extract: const APP_VERSION = '0.3.7-dev';
+APP_VERSION=$(grep -E "^[[:space:]]*const[[:space:]]+APP_VERSION[[:space:]]*=" "$APP_FILE" \
+              | head -1 \
+              | sed -E "s/.*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
+# Extract: const CACHE = 'ubuntu30-v0.3.7-dev';
+SW_CACHE=$(grep -E "^[[:space:]]*const[[:space:]]+CACHE[[:space:]]*=" "$SW_FILE" \
+           | head -1 \
+           | sed -E "s/.*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")
+
+if [ -z "$APP_VERSION" ] || [ -z "$SW_CACHE" ]; then
+  echo "pre-commit: couldn't read APP_VERSION ($APP_VERSION) or CACHE ($SW_CACHE). Skipping check." >&2
+  exit 0
+fi
+
+# By convention CACHE is 'ubuntu30-v<APP_VERSION>'.
+expected="ubuntu30-v${APP_VERSION}"
+if [ "$SW_CACHE" != "$expected" ]; then
+  cat >&2 <<EOF
+✗ pre-commit: version mismatch.
+
+  app/app.js               APP_VERSION = '${APP_VERSION}'
+  app/service-worker.js    CACHE       = '${SW_CACHE}'
+  expected CACHE           '${expected}'
+
+  Releasing means bumping BOTH together. Fix one of them, then re-commit.
+  Or, if this commit is meant to keep them out of sync deliberately, run:
+      git commit --no-verify
+EOF
+  exit 1
+fi
+
+exit 0
