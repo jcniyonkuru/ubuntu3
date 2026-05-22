@@ -351,7 +351,7 @@
         s.theme || '',
         (groupsById.get(s.groupId) || {}).name || '',
         userName(s.authorId)
-      ]));
+      ]), null, { searchable: false });
       card.appendChild(tbl);
     }
     main.appendChild(card);
@@ -369,7 +369,7 @@
         s.consent ? pill('yes', 'pill--success') : pill('no', 'pill--warning'),
         [s.hasPhoto ? 'photo' : null, s.hasAudio ? 'audio' : null].filter(Boolean).join(', ') || '—',
         userName(s.authorId)
-      ]));
+      ]), null, { searchable: false });
       card2.appendChild(tbl);
     }
     main.appendChild(card2);
@@ -495,7 +495,9 @@
     });
     main.appendChild(renderTable(
       ['Username', 'Email', 'Phone', 'First name', 'Last name', 'Sex', 'Age', 'Role', 'Lang', 'Last login', 'Status', 'Actions'],
-      rows
+      rows,
+      null,
+      { searchPlaceholder: (onTraineesRoute ? 'Search trainees…' : 'Search staff…') + ' (' + rows.length + ')' }
     ));
   }
 
@@ -610,7 +612,8 @@
     main.appendChild(renderTable(
       ['Name', 'Region', 'Start', 'End', 'Courses', 'Participants', 'Author', 'Updated'],
       rows,
-      (i) => openCohortModal(sortedCohorts[i])
+      (i) => openCohortModal(sortedCohorts[i]),
+      { searchPlaceholder: 'Search cohorts… (' + rows.length + ')' }
     ));
   }
 
@@ -670,7 +673,8 @@
     main.appendChild(renderTable(
       ['Name', 'Cohort', 'Facilitators', 'Participants', 'Author', 'Updated'],
       rows,
-      (i) => openCourseModal(sortedGroups[i])
+      (i) => openCourseModal(sortedGroups[i]),
+      { searchPlaceholder: 'Search courses… (' + rows.length + ')' }
     ));
   }
 
@@ -705,7 +709,8 @@
     main.appendChild(renderTable(
       ['Name', 'Sex', 'Age', 'Course', 'Email', 'Phone', 'Updated'],
       rows,
-      (i) => openParticipantEditModal(sortedParts[i])
+      (i) => openParticipantEditModal(sortedParts[i]),
+      { searchPlaceholder: 'Search participants… (' + rows.length + ')' }
     ));
   }
 
@@ -735,7 +740,8 @@
     main.appendChild(renderTable(
       ['Date', 'Theme', 'Course', 'Location', 'Attendance', 'Author', 'Updated'],
       rows,
-      (i) => openSessionModal(sortedSessions[i])
+      (i) => openSessionModal(sortedSessions[i]),
+      { searchPlaceholder: 'Search sessions… (' + rows.length + ')' }
     ));
   }
 
@@ -770,7 +776,8 @@
     main.appendChild(renderTable(
       ['Updated', 'Tag', 'Text', 'Consent', 'Media', 'Author'],
       rows,
-      (i) => openStoryModal(sortedStories[i])
+      (i) => openStoryModal(sortedStories[i]),
+      { searchPlaceholder: 'Search stories… (' + rows.length + ')' }
     ));
   }
 
@@ -891,13 +898,13 @@
           el('h3', null, 'By sex'),
           renderTable(['Sex', 'Count', '%'], Object.entries(dem.bySex).map(([k, n]) => [
             sexLabel[k] || k, n, demTotal ? Math.round(n*100/demTotal) + '%' : '—'
-          ]))
+          ]), null, { searchable: false })
         ]),
         el('div', { style: 'flex:1 1 200px' }, [
           el('h3', null, 'By age range'),
           renderTable(['Age', 'Count'], Object.entries(dem.byAgeRange).map(([k, n]) => [
             ageLabelOrDash(k), n
-          ]))
+          ]), null, { searchable: false })
         ])
       ])
     ]));
@@ -916,7 +923,9 @@
             d.cohorts.map((c) => [
               c.name, c.region || '—', c.groups, c.participants, c.sessions,
               c.attendanceN > 0 ? c.attendancePct + '%' : '—'
-            ])
+            ]),
+            null,
+            { searchPlaceholder: 'Filter cohorts… (' + d.cohorts.length + ')' }
           )
     ]));
 
@@ -1036,13 +1045,21 @@
    * @param {Array<Array<*>>} rows
    * @param {Function} [onRowClick]  fn(rowIndex) — when provided, rows become clickable
    */
-  function renderTable(headers, rows, onRowClick) {
+  function renderTable(headers, rows, onRowClick, opts) {
+    opts = opts || {};
+    const searchable = opts.searchable !== false;   // default: on
+    const placeholder = opts.searchPlaceholder || ('Search… (' + rows.length + ' rows)');
+
     const wrap = el('div', { class: 'table-wrap' });
     const tbl = el('table', { class: 'data' });
     const thead = el('thead'); const trh = el('tr');
     headers.forEach((h) => trh.appendChild(el('th', null, h)));
     thead.appendChild(trh); tbl.appendChild(thead);
     const tbody = el('tbody');
+    // Cache each row's lowercased searchable text so we filter without touching
+    // the DOM until the user actually types something.
+    const trList = [];
+    const textCache = [];
     rows.forEach((r, idx) => {
       const tr = el('tr');
       if (onRowClick) {
@@ -1053,16 +1070,65 @@
           onRowClick(idx);
         });
       }
+      const textParts = [];
       r.forEach((cell) => {
         if (cell instanceof Node) {
           const td = el('td'); td.appendChild(cell); tr.appendChild(td);
+          textParts.push(td.textContent || '');
         } else {
-          tr.appendChild(el('td', null, cell == null ? '' : String(cell)));
+          const s = cell == null ? '' : String(cell);
+          tr.appendChild(el('td', null, s));
+          textParts.push(s);
         }
       });
       tbody.appendChild(tr);
+      trList.push(tr);
+      textCache.push(textParts.join(' ').toLowerCase());
     });
-    tbl.appendChild(tbody); wrap.appendChild(tbl); return wrap;
+    tbl.appendChild(tbody);
+
+    if (searchable && rows.length > 0) {
+      // Toolbar above the table: search input + a live "X of Y" counter.
+      const countEl = el('span', {
+        class: 'small muted',
+        style: 'margin-left:10px; white-space:nowrap'
+      }, rows.length + ' / ' + rows.length);
+      const search = el('input', {
+        type: 'search',
+        placeholder,
+        autocomplete: 'off',
+        spellcheck: 'false',
+        style: 'flex:1; min-width:0; padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px'
+      });
+      // Live filter: hide non-matching rows; update the counter.
+      function applyFilter() {
+        const q = (search.value || '').trim().toLowerCase();
+        let shown = 0;
+        for (let i = 0; i < trList.length; i++) {
+          const hit = q === '' || textCache[i].indexOf(q) !== -1;
+          trList[i].style.display = hit ? '' : 'none';
+          if (hit) shown++;
+        }
+        countEl.textContent = shown + ' / ' + rows.length;
+      }
+      search.addEventListener('input', applyFilter);
+      // Press Escape to clear, like a native search field.
+      search.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && search.value !== '') {
+          search.value = '';
+          applyFilter();
+          e.stopPropagation();
+        }
+      });
+      const bar = el('div', {
+        class: 'table-search',
+        style: 'display:flex; align-items:center; gap:8px; margin:0 0 8px 0'
+      }, [search, countEl]);
+      wrap.appendChild(bar);
+    }
+
+    wrap.appendChild(tbl);
+    return wrap;
   }
   function groupBy(arr, key) {
     const m = new Map();

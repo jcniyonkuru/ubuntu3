@@ -189,6 +189,15 @@ h3 { font-size: 15px; margin: 8px 0 4px; }
 .card__head h2 { margin: 0; }
 
 .table-wrap { overflow-x: auto; }
+/* v0.3.7 — search bar above large tables */
+.table-search input[type="search"]:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(174, 27, 27, 0.12);
+}
+@media print {
+  .table-search { display: none; }
+}
 table.data {
   width: 100%;
   border-collapse: collapse;
