@@ -301,9 +301,13 @@
       return (d.textContent || d.innerText || '').replace(/\s+/g, ' ');
     }
     // Render the saved HTML through a strict allow-list before injecting.
-    // Story text can only contain: <p> <br> <strong> <em> <b> <i> <u> <ul> <ol> <li>.
-    // Everything else (script, img, iframe, style, attributes…) is stripped.
-    var SAFE_TAGS = { P:1, BR:1, STRONG:1, EM:1, B:1, I:1, U:1, UL:1, OL:1, LI:1 };
+    // Story text can only contain:
+    //   plain formatting: <p> <br> <strong> <em> <b> <i> <u> <ul> <ol> <li>
+    //   font with attrs:  <font color="#xxxxxx" size="1-7">
+    // Anything else (script, img, iframe, style, on-handlers…) is dropped.
+    var SAFE_TAGS = { P:1, BR:1, STRONG:1, EM:1, B:1, I:1, U:1, UL:1, OL:1, LI:1, FONT:1 };
+    var HEX_RE  = /^#[0-9a-fA-F]{3,8}$/;
+    var SIZE_RE = /^[1-7]$/;
     function sanitizeStoryHtml(raw) {
       var src = document.createElement('div');
       src.innerHTML = String(raw || '');
@@ -315,6 +319,14 @@
             dstNode.appendChild(document.createTextNode(n.nodeValue));
           } else if (n.nodeType === 1 /* element */ && SAFE_TAGS[n.nodeName]) {
             var clone = document.createElement(n.nodeName.toLowerCase());
+            // Only the FONT tag carries attributes we trust, and only after
+            // strict validation. Everything else inherits no attributes.
+            if (n.nodeName === 'FONT') {
+              var color = n.getAttribute('color');
+              if (color && HEX_RE.test(color)) clone.setAttribute('color', color);
+              var size = n.getAttribute('size');
+              if (size && SIZE_RE.test(size)) clone.setAttribute('size', size);
+            }
             walk(n, clone);
             dstNode.appendChild(clone);
           } else if (n.nodeType === 1) {

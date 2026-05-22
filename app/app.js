@@ -3279,19 +3279,94 @@
         }
       }, label);
     }
+    // Save the current selection before opening the color picker (the
+    // native color dialog steals focus on some browsers).
+    let savedRange = null;
+    function saveSelection() {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) savedRange = sel.getRangeAt(0).cloneRange();
+    }
+    function restoreSelection() {
+      if (!savedRange) return;
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    }
+
+    // Font-size buttons step through HTML's 1–7 scale via execCommand. Two
+    // visible buttons (A− / A+) jump the current selection down to 2 or
+    // up to 5; tapping the same one twice still produces a visible change
+    // because each tap re-wraps with a fresh <font size> element.
+    function fontSizeBtn(label, size, title) {
+      return el('button', {
+        type: 'button',
+        class: 'rt-tb-btn',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand('fontSize', false, String(size));
+        }
+      }, label);
+    }
+
+    // Native color picker bound to a <font color="#hex"> via execCommand.
+    const colorInput = el('input', {
+      type: 'color', value: '#1B1B1B',
+      style: 'position:absolute; opacity:0; width:0; height:0; pointer-events:none'
+    });
+    colorInput.addEventListener('input', () => {
+      restoreSelection();
+      document.execCommand('foreColor', false, colorInput.value);
+    });
+    const colorBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-color',
+      title: t('rt.color') || 'Color',
+      'aria-label': t('rt.color') || 'Color',
+      onMousedown: (e) => {
+        // Capture the selection before the color dialog opens.
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        // Open the picker after the focus dance settles.
+        setTimeout(() => colorInput.click(), 0);
+      }
+    }, [
+      el('span', { style: 'font-weight:700' }, 'A'),
+      el('span', { class: 'rt-tb-color-swatch', style: 'background:' + colorInput.value }),
+    ]);
+
     const toolbar = el('div', { class: 'rt-toolbar' }, [
-      tbBtn('B', 'bold',           t('rt.bold')   || 'Bold'),
-      tbBtn('I', 'italic',         t('rt.italic') || 'Italic'),
+      tbBtn('B', 'bold',                t('rt.bold')   || 'Bold'),
+      tbBtn('I', 'italic',              t('rt.italic') || 'Italic'),
       tbBtn('•', 'insertUnorderedList', t('rt.bullets') || 'Bulleted list'),
-      tbBtn('¶', 'formatBlock',    t('rt.paragraph') || 'Paragraph'),
+      tbBtn('¶', 'formatBlock',         t('rt.paragraph') || 'Paragraph'),
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      fontSizeBtn('A−', 2, t('rt.smaller') || 'Smaller'),
+      fontSizeBtn('A+', 5, t('rt.larger')  || 'Larger'),
+      colorBtn,
+      colorInput,
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      tbBtn('↶', 'undo', t('rt.undo') || 'Undo'),
+      tbBtn('↷', 'redo', t('rt.redo') || 'Redo'),
     ]);
     // The "paragraph" button needs a value, not just a command; handle it specially.
-    const paraBtn = toolbar.lastElementChild;
+    // (Find it by position: index 3 in the array above.)
+    const paraBtn = toolbar.children[3];
     paraBtn.onmousedown = (e) => {
       e.preventDefault();
       editor.focus();
       document.execCommand('formatBlock', false, 'p');
     };
+
+    // Keep the swatch in sync with the picker value as the user picks.
+    colorInput.addEventListener('change', () => {
+      const swatch = colorBtn.querySelector('.rt-tb-color-swatch');
+      if (swatch) swatch.style.background = colorInput.value;
+    });
 
     const wrapper = el('div', { class: 'rt-wrapper' }, [toolbar, editor]);
 

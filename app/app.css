@@ -678,8 +678,9 @@ p { margin: 6px 0; }
 }
 .rt-tb-btn {
   background: transparent; border: 0;
-  width: 32px; height: 32px;
-  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; height: 32px;
+  padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 14px; font-weight: 600;
   color: var(--text);
   border-radius: 6px;
@@ -687,6 +688,20 @@ p { margin: 6px 0; }
 }
 .rt-tb-btn:hover  { background: var(--brand-tint, #F7E9E9); }
 .rt-tb-btn:active { background: #F0D5D5; }
+.rt-tb-sep {
+  display: inline-block;
+  width: 1px; height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.rt-tb-color { position: relative; }
+.rt-tb-color-swatch {
+  display: inline-block;
+  width: 12px; height: 4px;
+  border-radius: 2px;
+  margin-left: 1px;
+  background: #1B1B1B;
+}
 .rt-editor {
   min-height: 120px;
   padding: 10px 12px;
