@@ -3061,13 +3061,45 @@
     ]));
 
     // App
+    const lastSyncLineEl = el('p', { class: 'small muted' }, t('more.lastSyncLoading'));
+    // Populate "Last sync · 2 min ago" once we can read the sync state.
+    (async () => {
+      try {
+        const s = window.SYNC ? await window.SYNC.getState() : null;
+        const iso = s && s.lastSync ? s.lastSync : null;
+        lastSyncLineEl.textContent = iso
+          ? t('more.lastSyncAgo', { ago: formatRelativeAgo(iso) })
+          : t('more.lastSyncNever');
+      } catch (e) {
+        lastSyncLineEl.textContent = t('more.lastSyncNever');
+      }
+    })();
+
     root.appendChild(el('div', { class: 'card' }, [
       el('h3', null, t('more.app')),
       el('p', { class: 'small muted' }, t('more.version', { v: APP_VERSION })),
+      lastSyncLineEl,
       el('p', { class: 'small muted' }, t('more.installHint')),
+      // Copy a diagnostic to clipboard — useful when a trainer needs to file
+      // an issue. One-tap, no jargon, paste into email / WhatsApp.
       el('button', {
         class: 'btn btn--ghost btn--block',
-        style: 'color:var(--danger); border-color:var(--danger)',
+        style: 'margin-top:8px',
+        onClick: async () => {
+          const text = await buildDiagnostic();
+          try {
+            await navigator.clipboard.writeText(text);
+            toast(t('more.diagCopied'));
+          } catch (e) {
+            // Fallback: dump into a prompt so the user can copy manually.
+            try { window.prompt(t('more.diagFallbackPrompt'), text); } catch (_) {}
+            toast(t('more.diagFallback'));
+          }
+        }
+      }, t('more.diagCta')),
+      el('button', {
+        class: 'btn btn--ghost btn--block',
+        style: 'margin-top:8px; color:var(--danger); border-color:var(--danger)',
         onClick: async () => {
           if (!confirm(t('more.clearConfirm'))) return;
           const savedLang = CURRENT_AUTHOR.lang;
@@ -3081,6 +3113,73 @@
         }
       }, t('more.clearCta'))
     ]));
+  }
+
+  /** Compact "in N units" relative-time string used by the More tab. */
+  function formatRelativeAgo(iso) {
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return '—';
+    const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (s < 60)       return t('more.ago.justNow');
+    if (s < 3600)    return t('more.ago.min',  { n: Math.round(s / 60) });
+    if (s < 86400)   return t('more.ago.hour', { n: Math.round(s / 3600) });
+    return t('more.ago.day', { n: Math.round(s / 86400) });
+  }
+
+  /** Build a plain-text diagnostic blob for support. */
+  async function buildDiagnostic() {
+    const apiUser = (window.API && window.API.getUser()) || {};
+    const role = apiUser.role || '—';
+    const email = apiUser.email || '—';
+    const lang = (CURRENT_AUTHOR && CURRENT_AUTHOR.lang) || (window.I18N && window.I18N.getLang()) || 'fr';
+    const online = navigator.onLine ? 'online' : 'offline';
+    let lastSync = '—', syncStatus = '—', pendingDirty = 0;
+    try {
+      const s = window.SYNC ? await window.SYNC.getState() : null;
+      if (s) {
+        lastSync = s.lastSync || '—';
+        syncStatus = s.status || '—';
+      }
+    } catch (e) {}
+    // IndexedDB counts (best-effort, count rows including tombstones).
+    async function n(store) {
+      try { return (await DB.all(store, true)).length; }
+      catch (e) { return -1; }
+    }
+    const counts = {};
+    for (const store of ['cohorts', 'groups', 'participants', 'sessions', 'attendance', 'stories']) {
+      counts[store] = await n(store);
+    }
+    try {
+      pendingDirty = 0;
+      for (const store of ['cohorts', 'groups', 'participants', 'sessions', 'attendance', 'stories']) {
+        const rows = await DB.all(store, true);
+        pendingDirty += rows.filter((r) => r.dirty).length;
+      }
+    } catch (e) {}
+
+    const lines = [];
+    lines.push('Ubuntu 3.0 diagnostic');
+    lines.push('=====================');
+    lines.push('Version:      v' + APP_VERSION);
+    lines.push('Generated:    ' + new Date().toISOString());
+    lines.push('Network:      ' + online);
+    lines.push('Language:     ' + lang);
+    lines.push('Account:      ' + email + '  (' + role + ')');
+    lines.push('');
+    lines.push('Sync');
+    lines.push('  status:     ' + syncStatus);
+    lines.push('  last sync:  ' + lastSync);
+    lines.push('  pending:    ' + pendingDirty + ' dirty record(s) waiting to push');
+    lines.push('');
+    lines.push('Local data');
+    Object.keys(counts).forEach((k) => {
+      lines.push('  ' + k.padEnd(15) + counts[k]);
+    });
+    lines.push('');
+    lines.push('User agent:   ' + (navigator.userAgent || '—'));
+    lines.push('Screen:       ' + (window.screen ? (screen.width + 'x' + screen.height) : '—'));
+    return lines.join('\n');
   }
 
   // ============================================================
