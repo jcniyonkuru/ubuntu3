@@ -3235,8 +3235,16 @@
     window.addEventListener('offline', updateNetDot);
     window.addEventListener('hashchange', handleRoute);
 
-    if (!location.hash) location.hash = '#/dashboard';
-    await handleRoute();
+    // On first load, either the URL already has a hash (deep link / reload) or
+    // it doesn't. If it doesn't, set it to /dashboard — that fires a
+    // hashchange event which calls handleRoute for us. Calling handleRoute
+    // unconditionally on top of that produces a double-render on the
+    // dashboard the first time the app boots.
+    if (!location.hash) {
+      location.hash = '#/dashboard';
+    } else {
+      await handleRoute();
+    }
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('service-worker.js').catch((err) => console.warn('SW registration failed', err));
