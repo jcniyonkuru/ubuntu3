@@ -37,6 +37,7 @@
       // Common
       'common.save': 'Enregistrer',
       'common.cancel': 'Annuler',
+      'common.searchPh': 'Rechercher…',
       'common.delete': 'Supprimer',
       'common.edit': 'Modifier',
       'common.create': 'Créer',
@@ -471,6 +472,7 @@
 
       'common.save': 'Save',
       'common.cancel': 'Cancel',
+      'common.searchPh': 'Search…',
       'common.delete': 'Delete',
       'common.edit': 'Edit',
       'common.create': 'Create',
@@ -895,6 +897,7 @@
 
       'common.save': 'Bika',
       'common.cancel': 'Hagarika',
+      'common.searchPh': 'Rondera…',
       'common.delete': 'Kuraho',
       'common.edit': 'Hindura',
       'common.create': 'Rema',
