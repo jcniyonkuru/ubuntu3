@@ -688,6 +688,11 @@ p { margin: 6px 0; }
 }
 .rt-tb-btn:hover  { background: var(--brand-tint, #F7E9E9); }
 .rt-tb-btn:active { background: #F0D5D5; }
+.rt-tb-btn.rt-active {
+  background: var(--brand-tint, #F7E9E9);
+  color: var(--brand);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
 .rt-tb-sep {
   display: inline-block;
   width: 1px; height: 18px;
@@ -723,6 +728,8 @@ p { margin: 6px 0; }
 .rt-editor ul,
 .rt-editor ol  { margin: 4px 0 8px; padding-left: 22px; }
 .rt-editor li  { margin-bottom: 2px; }
+.rt-editor img { max-width: 100%; height: auto; border-radius: 8px; margin: 6px 0; }
+.rt-editor a   { color: var(--brand); text-decoration: underline; }
 .checkbox {
   display: flex; align-items: center; gap: 8px;
 }

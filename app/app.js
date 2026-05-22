@@ -3355,6 +3355,104 @@
     // Material-style undo / redo curl arrows.
     const ICON_UNDO = '<path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>';
     const ICON_REDO = '<path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>';
+    const ICON_LINK = '<path fill="currentColor" d="M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8v2zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/>';
+    const ICON_IMG  = '<path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>';
+
+    // ---------- Link button ----------
+    // Wraps the selection in <a href="…">. We validate the URL (http(s)://
+    // or mailto:) so the sanitiser doesn't have to allow arbitrary schemes.
+    const linkBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-icon',
+      title: t('rt.link') || 'Link',
+      'aria-label': t('rt.link') || 'Link',
+      onMousedown: (e) => {
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        // Pre-fill the prompt with any href already on the selection.
+        const sel = window.getSelection();
+        let existingHref = '';
+        if (sel && sel.anchorNode) {
+          const a = (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement).closest('a');
+          if (a) existingHref = a.getAttribute('href') || '';
+        }
+        const url = window.prompt(t('rt.linkPrompt') || 'Link URL', existingHref || 'https://');
+        if (url == null) { restoreSelection(); return; }   // cancelled
+        const trimmed = url.trim();
+        if (!trimmed) {
+          // Empty input → remove the link
+          restoreSelection();
+          document.execCommand('unlink', false, null);
+          return;
+        }
+        if (!/^(https?:\/\/|mailto:)/i.test(trimmed)) {
+          toast(t('rt.linkInvalid') || 'Link must start with https://, http:// or mailto:');
+          return;
+        }
+        restoreSelection();
+        document.execCommand('createLink', false, trimmed);
+        // execCommand doesn't set rel/target — patch the just-created anchor.
+        const range = window.getSelection().getRangeAt(0);
+        const a = range && range.commonAncestorContainer ?
+          (range.commonAncestorContainer.nodeType === 1
+            ? range.commonAncestorContainer.querySelector('a[href="' + trimmed + '"]')
+            : range.commonAncestorContainer.parentElement.querySelector('a[href="' + trimmed + '"]'))
+          : null;
+        if (a) {
+          a.setAttribute('rel', 'noopener noreferrer');
+          a.setAttribute('target', '_blank');
+        }
+      }
+    });
+    linkBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + ICON_LINK + '</svg>';
+
+    // ---------- Image button ----------
+    // Opens a file picker that the OS may surface as "Take photo" on
+    // mobile (the capture=environment hint). The image is read, drawn into
+    // a 800px-wide canvas at JPEG quality 0.75, then embedded as a data: URI
+    // <img>. Stays inline in story.text — no separate upload.
+    // Limit: 3 images per story (UI guard).
+    const MAX_IMAGES_PER_STORY = 3;
+    const MAX_IMG_WIDTH = 800;
+    const JPEG_QUALITY  = 0.75;
+    const imageInput = el('input', {
+      type: 'file',
+      accept: 'image/*',
+      capture: 'environment',
+      style: 'position:absolute; opacity:0; width:0; height:0; pointer-events:none'
+    });
+    imageInput.addEventListener('change', async () => {
+      const file = imageInput.files && imageInput.files[0];
+      imageInput.value = '';   // reset so the same file can be picked again
+      if (!file) return;
+      const existing = editor.querySelectorAll('img').length;
+      if (existing >= MAX_IMAGES_PER_STORY) {
+        toast(t('rt.imgLimit', { n: MAX_IMAGES_PER_STORY }) || 'Max images reached');
+        return;
+      }
+      try {
+        const dataUrl = await compressImageToDataUrl(file, MAX_IMG_WIDTH, JPEG_QUALITY);
+        restoreSelection();
+        document.execCommand('insertHTML', false,
+          '<img src="' + dataUrl + '" alt="" style="max-width:100%;height:auto;border-radius:8px;margin:6px 0">');
+      } catch (err) {
+        toast(t('rt.imgError') || ('Image failed: ' + (err.message || err)));
+      }
+    });
+    const imgBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-icon',
+      title: t('rt.image') || 'Insert image',
+      'aria-label': t('rt.image') || 'Insert image',
+      onMousedown: (e) => {
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        setTimeout(() => imageInput.click(), 0);
+      }
+    });
+    imgBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + ICON_IMG + '</svg>';
 
     const toolbar = el('div', { class: 'rt-toolbar' }, [
       tbBtn('B', 'bold',                t('rt.bold')      || 'Bold'),
@@ -3368,6 +3466,11 @@
       fontSizeBtn('A+', 5, t('rt.larger')  || 'Larger'),
       colorBtn,
       colorInput,
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      linkBtn,
+      imgBtn,
+      imageInput,
       // Separator
       el('span', { class: 'rt-tb-sep' }),
       tbIconBtn(ICON_UNDO, 'undo', t('rt.undo') || 'Undo'),
@@ -3392,6 +3495,34 @@
       if (swatch) swatch.style.background = colorInput.value;
     });
 
+    // ---------- Active-format highlight ----------
+    // When the selection or cursor sits inside <b>/<i>/<u>/<a>, light the
+    // matching toolbar button so the trainer sees "this text is already
+    // bold". Hooked to the document so it reacts to mouse + keyboard moves.
+    const formatButtons = {
+      bold:      toolbar.children[0],
+      italic:    toolbar.children[1],
+      underline: toolbar.children[2],
+    };
+    function syncToolbarState() {
+      // Only react while the selection is inside our editor.
+      const sel = window.getSelection();
+      const node = sel && sel.anchorNode;
+      const inside = node && (node.nodeType === 1 ? node : node.parentElement);
+      if (!inside || !editor.contains(inside)) return;
+      for (const cmd in formatButtons) {
+        const btn = formatButtons[cmd];
+        if (!btn) continue;
+        try {
+          if (document.queryCommandState(cmd)) btn.classList.add('rt-active');
+          else                                 btn.classList.remove('rt-active');
+        } catch (e) { /* some browsers throw for unsupported cmds */ }
+      }
+    }
+    document.addEventListener('selectionchange', syncToolbarState);
+    editor.addEventListener('keyup', syncToolbarState);
+    editor.addEventListener('click', syncToolbarState);
+
     const wrapper = el('div', { class: 'rt-wrapper' }, [toolbar, editor]);
 
     function getHtml() {
@@ -3414,6 +3545,44 @@
     const d = document.createElement('div');
     d.innerHTML = String(s);
     return (d.textContent || d.innerText || '').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Compress an image File to a JPEG data: URI, capped at `maxWidth` pixels.
+   * Used by the rich-text editor's image button. Aggressive compression is
+   * the entire reason inline data URIs are viable as story.text — a raw
+   * camera photo can be 3 MB; after this it's typically 30–80 KB.
+   *
+   * Returns a Promise resolving to "data:image/jpeg;base64,…".
+   */
+  function compressImageToDataUrl(file, maxWidth, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('FileReader failed'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Image decode failed'));
+        img.onload = () => {
+          try {
+            const scale = Math.min(1, maxWidth / img.naturalWidth);
+            const w = Math.round(img.naturalWidth  * scale);
+            const h = Math.round(img.naturalHeight * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width  = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            // White backdrop in case the source is transparent (PNG/HEIC) —
+            // JPEG doesn't carry alpha and would otherwise come out black.
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } catch (err) { reject(err); }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
   /**
