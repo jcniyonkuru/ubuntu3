@@ -694,6 +694,9 @@ p { margin: 6px 0; }
   background: var(--border);
   margin: 0 4px;
 }
+.rt-tb-icon { color: var(--muted); }
+.rt-tb-icon:hover { color: var(--text); }
+.rt-tb-icon svg { display: block; }
 .rt-tb-color { position: relative; }
 .rt-tb-color-swatch {
   display: inline-block;

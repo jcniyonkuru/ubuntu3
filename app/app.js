@@ -3337,10 +3337,30 @@
       el('span', { class: 'rt-tb-color-swatch', style: 'background:' + colorInput.value }),
     ]);
 
+    // Inline-SVG variant of tbBtn for the icon-only buttons (undo/redo).
+    function tbIconBtn(svgPath, cmd, title) {
+      const btn = el('button', {
+        type: 'button',
+        class: 'rt-tb-btn rt-tb-icon',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand(cmd, false, null);
+        }
+      });
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + svgPath + '</svg>';
+      return btn;
+    }
+    // Material-style undo / redo curl arrows.
+    const ICON_UNDO = '<path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>';
+    const ICON_REDO = '<path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>';
+
     const toolbar = el('div', { class: 'rt-toolbar' }, [
-      tbBtn('B', 'bold',                t('rt.bold')   || 'Bold'),
-      tbBtn('I', 'italic',              t('rt.italic') || 'Italic'),
-      tbBtn('•', 'insertUnorderedList', t('rt.bullets') || 'Bulleted list'),
+      tbBtn('B', 'bold',                t('rt.bold')      || 'Bold'),
+      tbBtn('I', 'italic',              t('rt.italic')    || 'Italic'),
+      tbBtn('U', 'underline',           t('rt.underline') || 'Underline'),
+      tbBtn('•', 'insertUnorderedList', t('rt.bullets')   || 'Bulleted list'),
       tbBtn('¶', 'formatBlock',         t('rt.paragraph') || 'Paragraph'),
       // Separator
       el('span', { class: 'rt-tb-sep' }),
@@ -3350,17 +3370,21 @@
       colorInput,
       // Separator
       el('span', { class: 'rt-tb-sep' }),
-      tbBtn('↶', 'undo', t('rt.undo') || 'Undo'),
-      tbBtn('↷', 'redo', t('rt.redo') || 'Redo'),
+      tbIconBtn(ICON_UNDO, 'undo', t('rt.undo') || 'Undo'),
+      tbIconBtn(ICON_REDO, 'redo', t('rt.redo') || 'Redo'),
     ]);
-    // The "paragraph" button needs a value, not just a command; handle it specially.
-    // (Find it by position: index 3 in the array above.)
-    const paraBtn = toolbar.children[3];
+    // The "U" button uses execCommand('underline') with no value — wraps in <u>.
+    // The "¶" button needs a value, not just a command; handle it specially.
+    // (Find it by position: index 4 in the array above.)
+    const paraBtn = toolbar.children[4];
     paraBtn.onmousedown = (e) => {
       e.preventDefault();
       editor.focus();
       document.execCommand('formatBlock', false, 'p');
     };
+    // Visual cue on the "U" button: render an underlined glyph.
+    const uBtn = toolbar.children[2];
+    if (uBtn) uBtn.style.textDecoration = 'underline';
 
     // Keep the swatch in sync with the picker value as the user picks.
     colorInput.addEventListener('change', () => {
