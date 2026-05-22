@@ -1088,6 +1088,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.cohorts' });
   }
 
   // ---------- Cohort form ----------
@@ -1591,6 +1592,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.courses' });
   }
 
   // ---------- All Participants (flat list across groups) ----------
@@ -1645,6 +1647,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.participants' });
   }
 
   // ---------- Participant form ----------
@@ -2042,6 +2045,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.sessions' });
   }
 
   // ---------- Session form ----------
@@ -2561,6 +2565,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.stories' });
   }
 
   // ---------- Story form ----------
@@ -3103,6 +3108,90 @@
       style: 'margin-top:12px; color:var(--danger); border-color:var(--danger)',
       onClick
     }, label);
+  }
+
+  /**
+   * Install a live-filter search bar at the top of a list view.
+   *
+   * Call this AFTER the cards have been appended to `parent`. It snapshots
+   * the cards matching `itemSelector`, then inserts a search input + counter
+   * just before the first card. Typing filters in place; Escape clears.
+   *
+   * Per-view persistence: pass `key` (e.g. 'pwa.sessions') and the query
+   * survives navigation away and back in the same browser tab.
+   *
+   * @param {HTMLElement} parent  Container the cards live in.
+   * @param {object} opts
+   *   - key           sessionStorage key suffix; omit for ephemeral.
+   *   - placeholder   i18n'd search placeholder text.
+   *   - itemSelector  CSS selector for cards (default: '.card-link').
+   *   - minToShow     Don't bother rendering below this many items (default 4).
+   */
+  function attachListSearch(parent, opts) {
+    opts = opts || {};
+    const itemSel    = opts.itemSelector || '.card-link';
+    const minToShow  = opts.minToShow || 4;
+    const placeholder = opts.placeholder || (t('common.searchPh') || 'Search…');
+    const key        = opts.key || null;
+
+    const items = Array.from(parent.querySelectorAll(itemSel));
+    if (items.length < minToShow) return;
+
+    const cache = items.map((node) => (node.textContent || '').toLowerCase());
+
+    function readQ() {
+      if (!key) return '';
+      try { return sessionStorage.getItem('ubuntu30.listSearch.' + key) || ''; }
+      catch (e) { return ''; }
+    }
+    function writeQ(q) {
+      if (!key) return;
+      try { sessionStorage.setItem('ubuntu30.listSearch.' + key, q); } catch (e) {}
+    }
+
+    const counter = el('span', {
+      class: 'small muted',
+      style: 'white-space:nowrap'
+    }, items.length + ' / ' + items.length);
+
+    const input = el('input', {
+      type: 'search',
+      placeholder,
+      autocomplete: 'off',
+      spellcheck: 'false',
+      style: 'flex:1; min-width:0; padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px'
+    });
+    if (key) input.value = readQ();
+
+    function apply() {
+      const q = (input.value || '').trim().toLowerCase();
+      let shown = 0;
+      for (let i = 0; i < items.length; i++) {
+        const hit = q === '' || cache[i].indexOf(q) !== -1;
+        items[i].style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      }
+      counter.textContent = shown + ' / ' + items.length;
+      if (key) writeQ(input.value || '');
+    }
+
+    ['input', 'keyup', 'change', 'search'].forEach((evt) => {
+      input.addEventListener(evt, apply);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value !== '') {
+        input.value = '';
+        apply();
+        e.stopPropagation();
+      }
+    });
+
+    const bar = el('div', {
+      class: 'list-search',
+      style: 'display:flex; align-items:center; gap:10px; margin:6px 0 10px'
+    }, [input, counter]);
+    parent.insertBefore(bar, items[0]);
+    if (input.value) apply();
   }
 
   // ============================================================
