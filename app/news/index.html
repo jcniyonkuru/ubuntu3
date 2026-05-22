@@ -304,10 +304,15 @@
     // Story text can only contain:
     //   plain formatting: <p> <br> <strong> <em> <b> <i> <u> <ul> <ol> <li>
     //   font with attrs:  <font color="#xxxxxx" size="1-7">
-    // Anything else (script, img, iframe, style, on-handlers…) is dropped.
-    var SAFE_TAGS = { P:1, BR:1, STRONG:1, EM:1, B:1, I:1, U:1, UL:1, OL:1, LI:1, FONT:1 };
+    //   anchor:           <a href="https://… | http://… | mailto:…">
+    //   image:            <img src="data:image/…">
+    // Anything else (script, iframe, style, on-handlers, javascript: URLs…)
+    // is dropped.
+    var SAFE_TAGS = { P:1, BR:1, STRONG:1, EM:1, B:1, I:1, U:1, UL:1, OL:1, LI:1, FONT:1, A:1, IMG:1 };
     var HEX_RE  = /^#[0-9a-fA-F]{3,8}$/;
     var SIZE_RE = /^[1-7]$/;
+    var HREF_RE = /^(https?:\/\/|mailto:)/i;
+    var DATA_IMG_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
     function sanitizeStoryHtml(raw) {
       var src = document.createElement('div');
       src.innerHTML = String(raw || '');
@@ -319,13 +324,34 @@
             dstNode.appendChild(document.createTextNode(n.nodeValue));
           } else if (n.nodeType === 1 /* element */ && SAFE_TAGS[n.nodeName]) {
             var clone = document.createElement(n.nodeName.toLowerCase());
-            // Only the FONT tag carries attributes we trust, and only after
-            // strict validation. Everything else inherits no attributes.
+            // Only specific tags carry attributes, and each is validated.
             if (n.nodeName === 'FONT') {
               var color = n.getAttribute('color');
               if (color && HEX_RE.test(color)) clone.setAttribute('color', color);
               var size = n.getAttribute('size');
               if (size && SIZE_RE.test(size)) clone.setAttribute('size', size);
+            } else if (n.nodeName === 'A') {
+              var href = n.getAttribute('href') || '';
+              if (HREF_RE.test(href)) {
+                clone.setAttribute('href', href);
+                clone.setAttribute('rel', 'noopener noreferrer');
+                clone.setAttribute('target', '_blank');
+              } else {
+                // Bad scheme → drop the <a> wrapper, keep the text.
+                walk(n, dstNode);
+                continue;
+              }
+            } else if (n.nodeName === 'IMG') {
+              var src2 = n.getAttribute('src') || '';
+              if (DATA_IMG_RE.test(src2)) {
+                clone.setAttribute('src', src2);
+                clone.setAttribute('alt', n.getAttribute('alt') || '');
+                clone.style.maxWidth = '100%';
+                clone.style.height = 'auto';
+              } else {
+                // Disallowed src (http: image, javascript:, etc.) → drop.
+                continue;
+              }
             }
             walk(n, clone);
             dstNode.appendChild(clone);
