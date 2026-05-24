@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.14';
+  const APP_VERSION = '0.3.7-dev.15';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -99,7 +99,10 @@
     stories:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
     participants: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
     audio:        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>',
-    attendance:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>'
+    attendance:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>',
+    reports:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 9.2h3V19H5V9.2zm5.6-5h2.8V19h-2.8V4.2zM16.2 13H19V19h-2.8v-6z"/></svg>',
+    warning:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
+    publish:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9zm-9-7c-3.87 0-7 3.13-7 7 0 2.18.97 4.12 2.5 5.42V12h2v4.83A6.97 6.97 0 0 0 12 19c.86 0 1.68-.16 2.43-.45L10 14.59V11h2v2.59L17.5 19A6.96 6.96 0 0 0 19 12c0-3.87-3.13-7-7-7z"/></svg>'
   };
   function thumbIcon(kind) {
     return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
@@ -203,6 +206,7 @@
       // v0.3.7 — without this entry the Courses tab fell back to its
       // hard-coded HTML text ("Cours") in every language.
       groups:    t('tab.courses'),
+      reports:   t('tab.reports'),
       more:      t('tab.more')
     };
     $$('.tab').forEach((tab) => {
@@ -2694,6 +2698,113 @@
     attachListSearch(root, { key: 'pwa.stories' });
   }
 
+  // ---------- Reports (PWA, trainer-focused) ----------
+  // Two cards: data-quality alerts (participants missing sex/age) and
+  // a publish digest (stories opted-in for the public news feed). Both
+  // honour the dashboard's myCoursesOnly filter so trainers see "their"
+  // numbers first; admins can flip the filter off in Settings.
+  async function reportsView(_params, root) {
+    setTitle(t('reports.title'));
+
+    const allGroups = await DB.all('groups');
+    const groups = applyMyCourses(allGroups);
+    const myGroupIds = new Set(groups.map((g) => g.id));
+    const groupName = (id) => (allGroups.find((g) => g.id === id) || {}).name || '';
+
+    // ----- Card 1: participants with missing demographics -----
+    // Walk-ins are session-scoped data points, not enrolees — exclude
+    // them so we don't badger trainers about walk-in records they may
+    // never see again.
+    const participants = (await DB.all('participants'))
+      .filter((p) => !p.walkInSessionId)
+      .filter((p) => myGroupIds.has(p.groupId))
+      .filter((p) => p.status !== 'dropped')
+      .filter((p) => !p.sex || !p.ageRange)
+      .sort((a, b) => ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
+
+    const missingCard = el('div', { class: 'card card--accent' }, [
+      el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.warning }),
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('reports.missingTitle')),
+          el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'))
+        ])
+      ])
+    ]);
+    root.appendChild(missingCard);
+
+    if (participants.length) {
+      participants.forEach((p) => {
+        const missing = [
+          !p.sex      ? t('common.sex')      : null,
+          !p.ageRange ? t('common.ageRange') : null
+        ].filter(Boolean).join(' · ');
+        root.appendChild(el('a', { class: 'card-link', href: `#/participants/${p.id}/edit` }, [
+          el('div', { class: 'list-item' }, [
+            thumbIcon('participants'),
+            el('div', { class: 'grow' }, [
+              el('div', { class: 'list-item__title' }, ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+              el('div', { class: 'list-item__sub' }, [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · '))
+            ])
+          ])
+        ]));
+      });
+    } else {
+      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone')));
+    }
+
+    // ----- Card 2: stories that ship to the public feed -----
+    // publishable=true implies consent=true (the story form forces that),
+    // so we don't double-check consent here. We do scope by course when
+    // the story has a session; orphan/no-session stories are always shown
+    // because there's no other natural place for the trainer to find them.
+    const sessions = await DB.all('sessions');
+    const sessionGroupOf = (sid) => (sessions.find((s) => s.id === sid) || {}).groupId || null;
+    const stories = (await DB.all('stories'))
+      .filter((s) => !!s.publishable)
+      .filter((s) => {
+        if (!s.sessionId) return true;             // free-form story → keep
+        const gid = sessionGroupOf(s.sessionId);
+        return !gid || myGroupIds.has(gid);        // unknown course → keep, mine → keep
+      })
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
+    root.appendChild(el('div', { style: 'height:14px' }));
+
+    const publishCard = el('div', { class: 'card card--accent' }, [
+      el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.publish }),
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('reports.publishedTitle')),
+          el('div', { class: 'card__sub' }, tn(stories.length, 'reports.publishedCountOne', 'reports.publishedCountOther'))
+        ])
+      ])
+    ]);
+    root.appendChild(publishCard);
+
+    if (stories.length) {
+      stories.forEach((s) => {
+        root.appendChild(el('a', { class: 'card-link', href: `#/stories/${s.id}/edit` }, [
+          el('div', { class: 'list-item' }, [
+            storyThumb(s),
+            el('div', { class: 'grow' }, [
+              el('div', { class: 'list-item__title' }, (() => {
+                const plain = stripHtml(s.text || '');
+                return plain ? (plain.length > 60 ? plain.slice(0, 60) + '…' : plain) : t('common.noText');
+              })()),
+              el('div', { class: 'list-item__sub' }, [
+                s.sessionId ? groupName(sessionGroupOf(s.sessionId)) : null,
+                formatDate(s.updatedAt)
+              ].filter(Boolean).join(' · '))
+            ])
+          ])
+        ]));
+      });
+    } else {
+      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.publishedNone')));
+    }
+  }
+
   // ---------- Story form ----------
   let _recorder = null;
   let _recordedChunks = [];
@@ -4001,6 +4112,7 @@
   route('/stories', storiesListView);
   route('/stories/new', (_p, r) => storyFormView({}, r));
   route('/stories/:id/edit', storyFormView);
+  route('/reports', reportsView);
   route('/more', moreView);
 
   // ============================================================
