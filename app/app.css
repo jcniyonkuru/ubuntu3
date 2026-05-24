@@ -243,7 +243,11 @@ body {
   background: #fff;
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* Default to the maximum number of tabs we ship (Dashboard, Sessions,
+     Stories, Courses, Cohorts, Reports, More). applyTabVisibility()
+     overrides this inline with the count of visible tabs so the bar
+     redistributes evenly when one is hidden. */
+  grid-template-columns: repeat(7, 1fr);
   z-index: 9;
 }
 .tab {
