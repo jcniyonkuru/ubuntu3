@@ -887,6 +887,28 @@ p { margin: 6px 0; }
 }
 .card.card--row > .grow { min-width: 0; }
 
+/* Section heading with a leading SVG icon — used on Attendance, the
+   Participants/Sessions sub-headings inside a course, and the Courses
+   sub-heading inside a cohort. Tone of the icon matches the brand red
+   so the heading visually pairs with its detail card above. */
+.section-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+.section-h__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.section-h__icon svg { width: 22px; height: 22px; }
+.section-h__text { line-height: 1.2; }
+.section-h__row .section-h { margin: 0; }
+
 /* ---------- pills ---------- */
 .pill {
   display: inline-block;
