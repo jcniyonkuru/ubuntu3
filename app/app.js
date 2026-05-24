@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.3';
+  const APP_VERSION = '0.3.7-dev.4';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1514,15 +1514,21 @@
     }
     root.appendChild(partsSection);
 
-    root.appendChild(el('div', { class: 'row between', style: 'margin-top:16px' }, [
+    // Sessions block — wrapped in its own section so the search bar can
+    // scope to .course-session cards only (not the participants above).
+    // Removed the previous slice(0, 5) cap so search can reach every
+    // session — when the trainer types something, they expect the filter
+    // to match the entire course history, not just the most recent 5.
+    const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
+    sessSection.appendChild(el('div', { class: 'row between' }, [
       el('h3', null, t('group.sessionsHeading', { n: sessions.length })),
       el('a', { class: 'btn btn--sm btn--ghost', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
     ]));
     if (!sessions.length) {
-      root.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
+      sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
-      sessions.slice(0, 5).forEach((s) => {
-        root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
+      sessions.forEach((s) => {
+        sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
@@ -1531,7 +1537,14 @@
           ])
         ]));
       });
+      attachListSearch(sessSection, {
+        key: 'pwa.course.' + group.id + '.sessions',
+        placeholder: t('group.searchSessionsPh') || t('common.searchPh'),
+        itemSelector: '.course-session',
+        position: 'beforeItems',
+      });
     }
+    root.appendChild(sessSection);
   }
 
   // ---------- All Groups (flat list across cohorts) ----------
