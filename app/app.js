@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.6';
+  const APP_VERSION = '0.3.7-dev.7';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -85,6 +85,47 @@
     if (code === 'F') return t('sex.f');
     if (code === 'M') return t('sex.m');
     return t('sex.nb');
+  }
+
+  // ---------- list-row thumbnails ----------
+  // SVG glyphs mirror the bottom tab bar so every list row carries the
+  // same visual cue as the tab it belongs to. Story rows prefer the
+  // attached photo (or first inline rich-text image) and only fall back
+  // to the Stories icon when nothing is embedded.
+  const THUMB_ICONS = {
+    cohorts:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zM8 11c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>',
+    groups:       '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
+    sessions:     '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5C3.9 4 3 4.9 3 6v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM7 12h5v5H7z"/></svg>',
+    stories:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
+    participants: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+    audio:        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>'
+  };
+  function thumbIcon(kind) {
+    return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
+  }
+  // Build a thumbnail for a story row. Preference order:
+  //   1. attached photo Blob
+  //   2. first <img src="data:image/..."> embedded in the rich-text body
+  //   3. an audio glyph (when only audio is attached)
+  //   4. the generic Stories tab icon
+  function storyThumb(s) {
+    if (s.photo) {
+      const wrap = el('div', { class: 'thumb' });
+      const img  = el('img', { alt: '' });
+      img.src = URL.createObjectURL(s.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      wrap.appendChild(img);
+      return wrap;
+    }
+    const html = s.text || '';
+    const m = html.match(/<img\s+[^>]*src=["'](data:image\/[^"']+)["'][^>]*>/i);
+    if (m) {
+      const wrap = el('div', { class: 'thumb' });
+      wrap.appendChild(el('img', { alt: '', src: m[1] }));
+      return wrap;
+    }
+    if (s.audio) return thumbIcon('audio');
+    return thumbIcon('stories');
   }
 
   // ============================================================
@@ -1097,9 +1138,12 @@
         t('cohorts.sub', { g: cohortGroups.length, p: cohortPCount })
       ].filter(Boolean).join(' · ');
       root.appendChild(el('a', { class: 'card-link', href: `#/cohorts/${c.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, c.name || t('common.noName')),
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('cohorts'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, c.name || t('common.noName')),
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
@@ -1181,20 +1225,23 @@
     groups.forEach((g) => {
       const pCount = participants.filter((p) => p.groupId === g.id).length;
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, g.name || t('common.noName')),
-          el('div', { class: 'card__sub' },
-            // v0.3.5i — facilitator can be a list now; the legacy .facilitator
-            // text always mirrors the joined names of facilitatorIds, so it's
-            // safe to display directly. Plural label kicks in when there's a
-            // comma in the joined string (cheap heuristic).
-            (g.facilitator
-              ? (g.facilitator.indexOf(',') >= 0
-                  ? t('cohort.facilitatedByMany', { names: g.facilitator })
-                  : t('cohort.facilitatedBy',     { name:  g.facilitator }))
-              : t('cohort.noFacilitator')) +
-            ' · ' + t('cohort.participants', { n: pCount })
-          )
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('groups'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, g.name || t('common.noName')),
+            el('div', { class: 'card__sub' },
+              // v0.3.5i — facilitator can be a list now; the legacy .facilitator
+              // text always mirrors the joined names of facilitatorIds, so it's
+              // safe to display directly. Plural label kicks in when there's a
+              // comma in the joined string (cheap heuristic).
+              (g.facilitator
+                ? (g.facilitator.indexOf(',') >= 0
+                    ? t('cohort.facilitatedByMany', { names: g.facilitator })
+                    : t('cohort.facilitatedBy',     { name:  g.facilitator }))
+                : t('cohort.noFacilitator')) +
+              ' · ' + t('cohort.participants', { n: pCount })
+            )
+          ])
         ])
       ]));
     });
@@ -1500,6 +1547,7 @@
           style: isDropped ? 'opacity:.62' : ''
         }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('participants'),
             el('div', { class: 'grow' }, [
               titleNode,
               el('div', { class: 'list-item__sub' }, sub)
@@ -1536,6 +1584,7 @@
       sessions.forEach((s) => {
         sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
               el('div', { class: 'list-item__sub' }, formatDate(s.date))
@@ -1628,9 +1677,12 @@
           : null
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          titleNode,
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('groups'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            titleNode,
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
@@ -1682,6 +1734,7 @@
         style: isDropped ? 'opacity:.62' : ''
       }, [
         el('div', { class: 'list-item' }, [
+          thumbIcon('participants'),
           el('div', { class: 'grow' }, [
             titleNode,
             el('div', { class: 'list-item__sub' }, sub)
@@ -2076,6 +2129,7 @@
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
         el('div', { class: 'card' }, [
           el('div', { class: 'row between' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow', style: 'min-width:0' }, [
               titleRow,
               el('div', { class: 'card__sub' }, [formatDate(s.date), groupName(s.groupId), s.location].filter(Boolean).join(' · '))
@@ -2583,23 +2637,12 @@
     const participants = await DB.all('participants');
 
     stories.forEach((s) => {
-      const thumb = el('div', { class: 'thumb' });
-      if (s.photo) {
-        const img = el('img', { alt: '' });
-        img.src = URL.createObjectURL(s.photo);
-        img.onload = () => URL.revokeObjectURL(img.src);
-        thumb.appendChild(img);
-      } else if (s.audio) {
-        thumb.textContent = 'AUDIO';
-      } else {
-        thumb.textContent = 'TXT';
-      }
       const tag = s.sessionId ? ((sessions.find((x) => x.id === s.sessionId) || {}).theme || t('stories.tag.session'))
         : s.participantId ? ((participants.find((x) => x.id === s.participantId) || {}).firstName || t('stories.tag.participant'))
         : t('stories.tag.free');
       root.appendChild(el('a', { class: 'card-link', href: `#/stories/${s.id}/edit` }, [
         el('div', { class: 'list-item' }, [
-          thumb,
+          storyThumb(s),
           el('div', { class: 'grow' }, [
             el('div', { class: 'list-item__title' }, (() => {
               const plain = stripHtml(s.text || '');

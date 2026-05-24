@@ -870,6 +870,22 @@ p { margin: 6px 0; }
   flex-shrink: 0;
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Icon-only thumb used on list rows that don't have a photo. Mirrors the
+   tab-bar glyph so each list visually maps to its tab. */
+.thumb--icon {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.thumb--icon svg { width: 30px; height: 30px; }
+
+/* card variant that lays its children out in a row so a thumb can sit
+   next to the title/sub block on Cohort / Course / Session list rows. */
+.card.card--row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card.card--row > .grow { min-width: 0; }
 
 /* ---------- pills ---------- */
 .pill {
