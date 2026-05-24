@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.9';
+  const APP_VERSION = '0.3.7-dev.10';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1543,7 +1543,10 @@
       el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
     ));
     if (!participants.length) {
-      partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody'), `#/groups/${group.id}/participants/new`, t('group.noParticipantsCta')));
+      // The + Participant button next to the section heading already
+      // gives the same action — no need for a second CTA inside the
+      // empty state.
+      partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody')));
     } else {
       // Active rows first, then dropped (with a pill and faded look)
       const sorted = participants.slice().sort((a, b) => {
@@ -3341,11 +3344,15 @@
     return sel;
   }
   function emptyState(title, msg, href, btnLabel) {
+    // CTA is optional — when the surrounding section already exposes
+    // the same action (e.g. a + Participant button next to the
+    // heading) we skip the duplicate button to keep the screen clean.
+    const showCta = !!(href && btnLabel);
     return el('div', { class: 'empty' }, [
       el('h3', null, title),
       el('p', null, msg),
-      el('div', { class: 'spacer' }),
-      el('a', { class: 'btn', href }, btnLabel)
+      showCta ? el('div', { class: 'spacer' }) : null,
+      showCta ? el('a', { class: 'btn', href }, btnLabel) : null
     ]);
   }
   function dangerButton(label, onClick) {
