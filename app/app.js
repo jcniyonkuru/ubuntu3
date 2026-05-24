@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.16';
+  const APP_VERSION = '0.3.7-dev.17';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1579,8 +1579,14 @@
       sorted.forEach((p) => {
         const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
         const isDropped = p.status === 'dropped';
+        // Moodle pill — flag enrolees that came from Ubuntu eLearning so
+        // the trainer doesn't accidentally edit/delete a synced record.
+        // Mirrors the pill shown on courses and sessions.
         const titleNode = el('div', { class: 'list-item__title' }, [
           document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+          p.source === 'moodle'
+            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+            : null,
           isDropped ? el('span', {
             class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
@@ -2753,11 +2759,17 @@
           !p.sex      ? t('common.sex')      : null,
           !p.ageRange ? t('common.ageRange') : null
         ].filter(Boolean).join(' · ');
+        const title = el('div', { class: 'list-item__title' }, [
+          document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+          p.source === 'moodle'
+            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+            : null
+        ]);
         root.appendChild(el('a', { class: 'card-link', href: `#/participants/${p.id}/edit` }, [
           el('div', { class: 'list-item' }, [
             thumbIcon('participants'),
             el('div', { class: 'grow' }, [
-              el('div', { class: 'list-item__title' }, ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+              title,
               el('div', { class: 'list-item__sub' }, [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · '))
             ])
           ])
