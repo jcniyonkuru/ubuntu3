@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.12';
+  const APP_VERSION = '0.3.7-dev.13';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -197,15 +197,19 @@
     }
     const tabs = {
       dashboard: t('tab.dashboard'),
-      cohorts: t('tab.cohorts'),
-      sessions: t('tab.sessions'),
-      stories: t('tab.stories'),
-      more: t('tab.more')
+      cohorts:   t('tab.cohorts'),
+      sessions:  t('tab.sessions'),
+      stories:   t('tab.stories'),
+      // v0.3.7 — without this entry the Courses tab fell back to its
+      // hard-coded HTML text ("Cours") in every language.
+      groups:    t('tab.courses'),
+      more:      t('tab.more')
     };
     $$('.tab').forEach((tab) => {
       const span = tab.querySelector('span');
       if (span && tabs[tab.dataset.tab]) span.textContent = tabs[tab.dataset.tab];
     });
+    applyTabVisibility();
 
     // Language switcher button + menu state
     const lang = window.I18N.getLang();
@@ -2912,8 +2916,31 @@
         tiles
       };
     }
-    return { read, write, dashCfg, ALL_DASH_TILES, DEFAULT_TILES };
+    // v0.3.7 — Chrome (header/tab-bar) preferences. Right now the only
+    // knob is whether the Cohorts tab appears in the bottom bar.
+    // Default OFF for trainers (cohorts are a planning view they rarely
+    // touch in the field) and ON for admins. Stored alongside dash to
+    // keep one localStorage key.
+    function chromeCfg(s) {
+      const c = (s && s.chrome) || {};
+      const role = (window.CURRENT_AUTHOR && window.CURRENT_AUTHOR.role)
+                || (typeof CURRENT_AUTHOR !== 'undefined' && CURRENT_AUTHOR && CURRENT_AUTHOR.role)
+                || 'trainer';
+      const defaultShow = (role === 'admin');
+      const show = (c.showCohortsTab === undefined) ? defaultShow : !!c.showCohortsTab;
+      return { showCohortsTab: show };
+    }
+    return { read, write, dashCfg, chromeCfg, ALL_DASH_TILES, DEFAULT_TILES };
   })();
+
+  // Hide or reveal the Cohorts tab according to the chrome setting.
+  // Called from applyStaticLabels (initial load + lang change + settings
+  // save), so it's the single point where the bottom bar reflows.
+  function applyTabVisibility() {
+    const cfg = SETTINGS.chromeCfg(SETTINGS.read());
+    const cohortTab = document.querySelector('.tab[data-tab="cohorts"]');
+    if (cohortTab) cohortTab.hidden = !cfg.showCohortsTab;
+  }
 
   // -------- "My courses" filtering helpers --------
   // The Courses tile, Sessions tile, Courses list and Sessions list can all
@@ -2975,11 +3002,18 @@
       body.innerHTML = '';
       const settings = SETTINGS.read();
       const dash = SETTINGS.dashCfg(settings);
+      const chrome = SETTINGS.chromeCfg(settings);
 
       function save(partial) {
         const next = Object.assign({}, settings, { dash: Object.assign({}, dash, partial) });
         SETTINGS.write(next);
         render();   // re-render popup body only — no full route navigation
+      }
+      function saveChrome(partial) {
+        const next = Object.assign({}, settings, { chrome: Object.assign({}, chrome, partial) });
+        SETTINGS.write(next);
+        applyTabVisibility();
+        render();
       }
 
       // ----- Dashboard section -----
@@ -3028,6 +3062,20 @@
         }))
       ]);
       body.appendChild(section);
+
+      // ----- Navigation section -----
+      // Right now there's only one toggle (Cohorts tab) but the
+      // section is structured to host more bottom-bar prefs later.
+      const navSection = el('div', { class: 'popup__section' }, [
+        el('h4', null, t('settings.nav')),
+        (() => {
+          const cb = el('input', { type: 'checkbox' });
+          cb.checked = chrome.showCohortsTab;
+          cb.addEventListener('change', () => saveChrome({ showCohortsTab: cb.checked }));
+          return el('label', { class: 'popup__row' }, [cb, el('span', null, t('settings.showCohortsTab'))]);
+        })()
+      ]);
+      body.appendChild(navSection);
     }
 
     render();
