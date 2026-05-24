@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.13';
+  const APP_VERSION = '0.3.7-dev.14';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2940,6 +2940,13 @@
     const cfg = SETTINGS.chromeCfg(SETTINGS.read());
     const cohortTab = document.querySelector('.tab[data-tab="cohorts"]');
     if (cohortTab) cohortTab.hidden = !cfg.showCohortsTab;
+    // Reflow the grid so the remaining tabs split the bar evenly
+    // instead of leaving a blank column where Cohorts used to sit.
+    const bar = document.querySelector('.tabbar');
+    if (bar) {
+      const visible = Array.from(bar.querySelectorAll('.tab')).filter((t) => !t.hidden).length;
+      bar.style.gridTemplateColumns = 'repeat(' + Math.max(visible, 1) + ', 1fr)';
+    }
   }
 
   // -------- "My courses" filtering helpers --------

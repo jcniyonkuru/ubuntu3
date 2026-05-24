@@ -257,6 +257,10 @@ body {
 }
 .tab[aria-current="page"] { color: var(--brand); }
 .tab span { line-height: 1; }
+/* Without this rule the .tab class wins over the browser's default
+   [hidden] { display: none }, so a hidden tab would still render as a
+   flex column. Needed by SETTINGS.chromeCfg → applyTabVisibility. */
+.tab[hidden] { display: none; }
 
 /* ---------- typography & utility ---------- */
 h2 { font-size: 20px; margin: 8px 0 12px; }
