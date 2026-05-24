@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev';
+  const APP_VERSION = '0.3.7-dev.4';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1463,12 +1463,15 @@
       root.appendChild(syncBtn);
     }
 
-    root.appendChild(el('div', { class: 'row between' }, [
+    // Participants live in their own section so we can scope a search bar
+    // to them only — the sessions block below stays unfiltered.
+    const partsSection = el('div', { class: 'course-participants' });
+    partsSection.appendChild(el('div', { class: 'row between' }, [
       el('h3', null, t('group.participantsHeading', { n: participants.length })),
       el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
     ]));
     if (!participants.length) {
-      root.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody'), `#/groups/${group.id}/participants/new`, t('group.noParticipantsCta')));
+      partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody'), `#/groups/${group.id}/participants/new`, t('group.noParticipantsCta')));
     } else {
       // Active rows first, then dropped (with a pill and faded look)
       const sorted = participants.slice().sort((a, b) => {
@@ -1485,8 +1488,8 @@
             class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
         ]);
-        root.appendChild(el('a', {
-          class: 'card-link',
+        partsSection.appendChild(el('a', {
+          class: 'card-link course-participant',
           href: `#/participants/${p.id}/edit`,
           style: isDropped ? 'opacity:.62' : ''
         }, [
@@ -1498,17 +1501,34 @@
           ])
         ]));
       });
+      // Search bar scoped to participant cards only (not the sessions list
+      // below). Placement: beforeItems so the heading + "+ New participant"
+      // row stay above the search — the search slots between heading and
+      // the first participant card.
+      attachListSearch(partsSection, {
+        key: 'pwa.course.' + group.id + '.participants',
+        placeholder: t('group.searchParticipantsPh') || t('common.searchPh'),
+        itemSelector: '.course-participant',
+        position: 'beforeItems',
+      });
     }
+    root.appendChild(partsSection);
 
-    root.appendChild(el('div', { class: 'row between', style: 'margin-top:16px' }, [
+    // Sessions block — wrapped in its own section so the search bar can
+    // scope to .course-session cards only (not the participants above).
+    // Removed the previous slice(0, 5) cap so search can reach every
+    // session — when the trainer types something, they expect the filter
+    // to match the entire course history, not just the most recent 5.
+    const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
+    sessSection.appendChild(el('div', { class: 'row between' }, [
       el('h3', null, t('group.sessionsHeading', { n: sessions.length })),
       el('a', { class: 'btn btn--sm btn--ghost', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
     ]));
     if (!sessions.length) {
-      root.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
+      sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
-      sessions.slice(0, 5).forEach((s) => {
-        root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
+      sessions.forEach((s) => {
+        sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
@@ -1517,7 +1537,14 @@
           ])
         ]));
       });
+      attachListSearch(sessSection, {
+        key: 'pwa.course.' + group.id + '.sessions',
+        placeholder: t('group.searchSessionsPh') || t('common.searchPh'),
+        itemSelector: '.course-session',
+        position: 'beforeItems',
+      });
     }
+    root.appendChild(sessSection);
   }
 
   // ---------- All Groups (flat list across cohorts) ----------
@@ -3605,7 +3632,11 @@
   function attachListSearch(parent, opts) {
     opts = opts || {};
     const itemSel    = opts.itemSelector || '.card-link';
-    const minToShow  = opts.minToShow || 4;
+    // Default to 1 so the search bar shows as soon as there's any content,
+    // matching iOS-style list UX (the bar is always there, predictable
+    // muscle memory). Callers that explicitly want to hide it on small
+    // lists can pass minToShow:4 etc.
+    const minToShow  = (opts.minToShow != null) ? opts.minToShow : 1;
     const placeholder = opts.placeholder || (t('common.searchPh') || 'Search…');
     const key        = opts.key || null;
 
@@ -3624,9 +3655,11 @@
       try { sessionStorage.setItem('ubuntu30.listSearch.' + key, q); } catch (e) {}
     }
 
+    // The search bar is styled in app.css as .list-search-pill (iOS-style
+    // rounded pill with a magnifying-glass icon prepended). The counter
+    // sits to the right of the pill, also outside it.
     const counter = el('span', {
-      class: 'small muted',
-      style: 'white-space:nowrap'
+      class: 'small muted list-search-counter',
     }, items.length + ' / ' + items.length);
 
     const input = el('input', {
@@ -3634,9 +3667,22 @@
       placeholder,
       autocomplete: 'off',
       spellcheck: 'false',
-      style: 'flex:1; min-width:0; padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px'
+      class: 'list-search-input',
     });
     if (key) input.value = readQ();
+
+    // Inline-SVG magnifying glass — sits inside the pill, can't be styled
+    // away by browser-specific clear buttons.
+    const glassSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    glassSvg.setAttribute('viewBox', '0 0 24 24');
+    glassSvg.setAttribute('class', 'list-search-glass');
+    glassSvg.setAttribute('aria-hidden', 'true');
+    const glassPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    glassPath.setAttribute('fill', 'currentColor');
+    glassPath.setAttribute('d', 'M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z');
+    glassSvg.appendChild(glassPath);
+
+    const pill = el('label', { class: 'list-search-pill' }, [glassSvg, input]);
 
     function apply() {
       const q = (input.value || '').trim().toLowerCase();
@@ -3661,11 +3707,16 @@
       }
     });
 
-    const bar = el('div', {
-      class: 'list-search',
-      style: 'display:flex; align-items:center; gap:10px; margin:6px 0 10px'
-    }, [input, counter]);
-    parent.insertBefore(bar, items[0]);
+    const bar = el('div', { class: 'list-search' }, [pill, counter]);
+    // Placement: by default put it at the very top of the parent so the
+    // "Sync from Ubuntu eLearning" buttons and any hint paragraphs fall
+    // beneath it. Pass position:'beforeItems' to keep the old behaviour
+    // (search above the first card, after any leading content).
+    if (opts.position === 'beforeItems') {
+      parent.insertBefore(bar, items[0]);
+    } else {
+      parent.insertBefore(bar, parent.firstChild);
+    }
     if (input.value) apply();
   }
 
