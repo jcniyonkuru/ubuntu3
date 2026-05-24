@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.17';
+  const APP_VERSION = '0.3.7-dev.18';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -243,18 +243,10 @@
       bb.setAttribute('title',      t('news.title'));
     }
 
-    // Settings (gear) button — header icon only, label travels in title/aria.
-    const stB = $('#settings-btn');
-    if (stB) {
-      stB.setAttribute('aria-label', t('settings.title'));
-      stB.setAttribute('title',      t('settings.title'));
-      // Wire once. Re-applying applyStaticLabels (e.g. on language change)
-      // shouldn't stack listeners on the same button.
-      if (!stB.dataset.wired) {
-        stB.addEventListener('click', () => openSettingsPopup());
-        stB.dataset.wired = '1';
-      }
-    }
+    // v0.3.7 — settings moved out of the header into the More tab to
+    // free up header real estate. The gear-button wireup that used to
+    // live here was removed; openSettingsPopup() is reached from the
+    // Settings card inside moreView() instead.
   }
 
   function setSyncState(state) {
@@ -955,7 +947,7 @@
     const activeGroupsRate = groups.length ? Math.round((activeGroupsCount * 100) / groups.length) : 0;
 
     // The Settings gear lives in the global app header now — see the
-    // #settings-btn anchor in index.html. The dashboard just shows the
+    // Settings button now lives in the More tab. The dashboard just shows the
     // greeting, then reads the user's preferences for what to render.
     const settings = SETTINGS.read();
     const dashCfg  = SETTINGS.dashCfg(settings);
@@ -3233,6 +3225,18 @@
   // ---------- More: account, sync, settings, export ----------
   async function moreView(_params, root) {
     setTitle(t('more.title'));
+
+    // Settings — top of the More tab so it's the first thing trainers
+    // reach for. Tapping the button opens the same popup the header
+    // gear used to open before v0.3.7.
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h3', null, t('settings.title')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('more.settingsNote')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => openSettingsPopup()
+      }, t('more.openSettings'))
+    ]));
 
     // Account (v0.2)
     if (window.API && window.API.isAuthenticated()) {
