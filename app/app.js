@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.10';
+  const APP_VERSION = '0.3.7-dev.11';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1769,15 +1769,15 @@
   // ---------- Participant form ----------
   /**
    * v0.3.5 — Searchable user picker rendered when a trainer or admin taps
-   * "+ Participant" on a course. Trainers may only PICK; admins can also
-   * create a brand-new user (role='trainee', no invite email) inline.
+   * "+ Participant" on a course. v0.3.7 — both roles can now also create a
+   * brand-new trainee inline (no invite email). Email is the unicity key:
+   * if a user with that email already exists, the server reuses them and
+   * back-fills any missing demographics rather than creating a duplicate.
    *
    * Tapping a user creates a participant row in IndexedDB pointing at the
    * picked user.id, then navigates back to the course.
    */
   async function renderUserPicker(root, group) {
-    const isAdmin = (CURRENT_AUTHOR && CURRENT_AUTHOR.role === 'admin');
-
     if (!navigator.onLine) {
       root.appendChild(el('div', { class: 'card' }, [
         el('h3', { style: 'margin-top:0' }, t('picker.offlineTitle')),
@@ -1883,71 +1883,78 @@
     });
     setTimeout(() => search.focus(), 0);
 
-    // Admin-only: "Create a brand-new user (no invite)" expander
-    if (isAdmin) {
-      const createBtn = el('button', {
-        class: 'btn btn--ghost btn--block', type: 'button',
-        style: 'margin-top:16px'
-      }, t('picker.createNewCta'));
-      const createForm = el('form', {
-        class: 'card', style: 'margin-top:8px', hidden: true,
-        onSubmit: async (e) => {
-          e.preventDefault();
-          const firstName = createForm.elements['firstName'].value.trim();
-          const lastName  = createForm.elements['lastName'].value.trim();
-          const email     = createForm.elements['email'].value.trim();
-          const phone     = createForm.elements['phone'].value.trim();
-          const sex       = createForm.elements['sex'].value;
-          const ageRange  = createForm.elements['ageRange'].value;
-          if (!firstName || !lastName) return;
-          const submit = createForm.querySelector('button[type=submit]');
-          submit.disabled = true;
-          try {
-            const r = await window.API.createUser({
-              firstName, lastName, email, phone, sex, ageRange,
-              role: 'trainee', sendInvite: false,
-            });
-            // Now enrol them as a participant in this course
-            await pickUser({
-              id: r.user.id,
-              firstName: r.user.firstName,
-              lastName:  r.user.lastName,
-              email:     r.user.email,
-              syntheticEmail: !email,
-            });
-          } catch (err) {
-            toast(err.message || t('common.error'));
-            submit.disabled = false;
-          }
+    // v0.3.7 — "Create a brand-new person" expander, available to trainers
+    // and admins alike. Email + sex + age are required so the participant
+    // row is usable for reporting, and email is the unicity key the server
+    // uses to dedupe against existing users.
+    const createBtn = el('button', {
+      class: 'btn btn--ghost btn--block', type: 'button',
+      style: 'margin-top:16px'
+    }, t('picker.createNewCta'));
+    const createForm = el('form', {
+      class: 'card', style: 'margin-top:8px', hidden: true,
+      onSubmit: async (e) => {
+        e.preventDefault();
+        const firstName = createForm.elements['firstName'].value.trim();
+        const lastName  = createForm.elements['lastName'].value.trim();
+        const email     = createForm.elements['email'].value.trim().toLowerCase();
+        const phone     = createForm.elements['phone'].value.trim();
+        const sex       = createForm.elements['sex'].value;
+        const ageRange  = createForm.elements['ageRange'].value;
+        if (!firstName || !lastName) return;
+        // Defensive: required is set on the inputs, but double-check here in
+        // case the browser strips the constraint (older WebViews).
+        if (!email || !sex || !ageRange) {
+          toast(t('picker.createNewMissing'));
+          return;
         }
-      }, [
-        el('h3', { style: 'margin-top:0' }, t('picker.createNewTitle')),
-        el('p', { class: 'small muted', style: 'margin-top:0' }, t('picker.createNewIntro')),
-        el('div', { class: 'row', style: 'gap:12px' }, [
-          el('div', { class: 'grow' }, fg(t('common.firstName'), el('input', { name: 'firstName', type: 'text', required: true, autocomplete: 'given-name' }))),
-          el('div', { class: 'grow' }, fg(t('common.lastName'),  el('input', { name: 'lastName',  type: 'text', required: true, autocomplete: 'family-name' })))
-        ]),
-        fg(t('common.email'), el('input', { name: 'email', type: 'email', autocomplete: 'email', placeholder: t('common.emailPh') })),
-        fg(t('common.phone'), el('input', { name: 'phone', type: 'tel',   autocomplete: 'tel',   placeholder: '+257…' })),
-        el('div', { class: 'row', style: 'gap:12px' }, [
-          el('div', { class: 'grow' }, fg(t('common.sex'), selectEl('sex', [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))), ''))),
-          el('div', { class: 'grow' }, fg(t('common.ageRange'), selectEl('ageRange', [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))), '')))
-        ]),
-        el('div', { class: 'row', style: 'gap:8px' }, [
-          el('button', { class: 'btn', type: 'submit' }, t('picker.createNewSave')),
-          el('button', {
-            class: 'btn btn--ghost btn--sm', type: 'button',
-            onClick: () => { createForm.reset(); createForm.hidden = true; createBtn.hidden = false; }
-          }, t('common.cancel') || 'Cancel')
-        ])
-      ]);
-      createBtn.addEventListener('click', () => {
-        createForm.hidden = false; createBtn.hidden = true;
-        const fn = createForm.elements['firstName']; if (fn) fn.focus();
-      });
-      root.appendChild(createBtn);
-      root.appendChild(createForm);
-    }
+        const submit = createForm.querySelector('button[type=submit]');
+        submit.disabled = true;
+        try {
+          const r = await window.API.createUser({
+            firstName, lastName, email, phone, sex, ageRange,
+            role: 'trainee', sendInvite: false,
+          });
+          // Now enrol them as a participant in this course
+          await pickUser({
+            id: r.user.id,
+            firstName: r.user.firstName,
+            lastName:  r.user.lastName,
+            email:     r.user.email,
+            syntheticEmail: false,
+          });
+        } catch (err) {
+          toast(err.message || t('common.error'));
+          submit.disabled = false;
+        }
+      }
+    }, [
+      el('h3', { style: 'margin-top:0' }, t('picker.createNewTitle')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('picker.createNewIntro')),
+      el('div', { class: 'row', style: 'gap:12px' }, [
+        el('div', { class: 'grow' }, fg(t('common.firstName'), el('input', { name: 'firstName', type: 'text', required: true, autocomplete: 'given-name' }))),
+        el('div', { class: 'grow' }, fg(t('common.lastName'),  el('input', { name: 'lastName',  type: 'text', required: true, autocomplete: 'family-name' })))
+      ]),
+      fg(t('common.email'), el('input', { name: 'email', type: 'email', required: true, autocomplete: 'email', placeholder: t('common.emailPh') })),
+      fg(t('common.phone'), el('input', { name: 'phone', type: 'tel',   autocomplete: 'tel',   placeholder: '+257…' })),
+      el('div', { class: 'row', style: 'gap:12px' }, [
+        el('div', { class: 'grow' }, fg(t('common.sex'), selectEl('sex', [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))), '', true))),
+        el('div', { class: 'grow' }, fg(t('common.ageRange'), selectEl('ageRange', [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))), '', true)))
+      ]),
+      el('div', { class: 'row', style: 'gap:8px' }, [
+        el('button', { class: 'btn', type: 'submit' }, t('picker.createNewSave')),
+        el('button', {
+          class: 'btn btn--ghost btn--sm', type: 'button',
+          onClick: () => { createForm.reset(); createForm.hidden = true; createBtn.hidden = false; }
+        }, t('common.cancel') || 'Cancel')
+      ])
+    ]);
+    createBtn.addEventListener('click', () => {
+      createForm.hidden = false; createBtn.hidden = true;
+      const fn = createForm.elements['firstName']; if (fn) fn.focus();
+    });
+    root.appendChild(createBtn);
+    root.appendChild(createForm);
   }
 
   async function participantFormView(params, root) {
