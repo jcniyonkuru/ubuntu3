@@ -188,11 +188,171 @@ final class MoodleSync
 
         $activities = self::fetchActivities($base, $token, $courseId);
         $students   = self::fetchEnrolments($base, $token, $courseId);
+        // Best-effort: try to download the course banner image. Failure
+        // is never fatal — courses without an image just keep their
+        // generic icon in the PWA.
+        try { self::syncCourseImage($base, $token, $courseId, $groupId); }
+        catch (\Throwable $e) { error_log('[ubuntu30 moodle-sync] image ' . $groupId . ' failed: ' . $e->getMessage()); }
 
         return array_merge(
             self::reconcileSessions($groupId, $activities),
             self::reconcileParticipants($groupId, $students)
         );
+    }
+
+    /**
+     * Course image sync (v0.3.7). Calls core_course_get_courses_by_field
+     * to retrieve the course's overviewfiles array; the first image-like
+     * entry is downloaded with the WS token, written to
+     * server/storage/courses/<groupId>.<ext>, and a stable client URL is
+     * stored in groups_.image_url. When Moodle no longer returns an image
+     * we clear the column (and remove the stale file) so the PWA falls
+     * back to its generic course icon.
+     */
+    private static function storageDirCourses(): string
+    {
+        $dir = dirname(__DIR__) . '/storage/courses';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir;
+    }
+
+    private static function syncCourseImage(string $base, string $token, int $courseId, string $groupId): void
+    {
+        $url  = $base . '/webservice/rest/server.php';
+        $resp = self::http('POST', $url, [
+            'wstoken'             => $token,
+            'wsfunction'          => 'core_course_get_courses_by_field',
+            'moodlewsrestformat'  => 'json',
+            'field'               => 'id',
+            'value'               => (string) $courseId,
+        ]);
+        if ($resp === null) return;
+        $data = json_decode($resp, true);
+        $courses = is_array($data) && isset($data['courses']) && is_array($data['courses']) ? $data['courses'] : [];
+        if (!$courses) return;
+        $files = $courses[0]['overviewfiles'] ?? [];
+        if (!is_array($files)) $files = [];
+
+        $picked = null;
+        foreach ($files as $f) {
+            if (!is_array($f)) continue;
+            $mime = (string) ($f['mimetype'] ?? '');
+            if ($mime === '' || strpos($mime, 'image/') !== 0) continue;
+            $picked = $f;
+            break;
+        }
+
+        $pdo = Db::pdo();
+        $now = Db::nowUtc();
+
+        if (!$picked) {
+            // Image was removed upstream — clear our copy.
+            $row = $pdo->prepare('SELECT image_url FROM groups_ WHERE id = ?');
+            $row->execute([$groupId]);
+            $current = $row->fetchColumn();
+            if ($current) {
+                self::removeStoredImage($groupId);
+                $pdo->prepare('UPDATE groups_ SET image_url = NULL, server_updated_at = ? WHERE id = ?')
+                    ->execute([$now, $groupId]);
+            }
+            return;
+        }
+
+        $fileUrl = (string) ($picked['fileurl'] ?? '');
+        if ($fileUrl === '') return;
+        // pluginfile.php requires the WS token as a query arg for
+        // unauthenticated downloads. Append it without touching anything
+        // already in the URL.
+        $sep = (strpos($fileUrl, '?') === false) ? '?' : '&';
+        $fetchUrl = $fileUrl . $sep . 'token=' . rawurlencode($token);
+        $bytes = self::httpGetRaw($fetchUrl);
+        if ($bytes === null || $bytes === '') return;
+
+        $mime = (string) ($picked['mimetype'] ?? 'image/jpeg');
+        $ext = self::extForMime($mime);
+        // Remove any prior file with a different extension so we don't
+        // keep stale copies around.
+        self::removeStoredImage($groupId);
+        $dir = self::storageDirCourses();
+        $path = $dir . '/' . $groupId . '.' . $ext;
+        if (file_put_contents($path, $bytes) === false) {
+            error_log('[ubuntu30 moodle-sync] failed to write course image to ' . $path);
+            return;
+        }
+
+        // Stable client URL — proxied through our own server so the WS
+        // token never leaves the box.
+        $imageUrl = '/api/courses/' . $groupId . '/image';
+        $pdo->prepare('UPDATE groups_ SET image_url = ?, server_updated_at = ? WHERE id = ?')
+            ->execute([$imageUrl, $now, $groupId]);
+    }
+
+    private static function removeStoredImage(string $groupId): void
+    {
+        $dir = self::storageDirCourses();
+        foreach (glob($dir . '/' . $groupId . '.*') ?: [] as $f) {
+            @unlink($f);
+        }
+    }
+
+    private static function extForMime(string $mime): string
+    {
+        $m = strtolower($mime);
+        if ($m === 'image/png')      return 'png';
+        if ($m === 'image/gif')      return 'gif';
+        if ($m === 'image/webp')     return 'webp';
+        if ($m === 'image/svg+xml')  return 'svg';
+        return 'jpg';
+    }
+
+    /** GET an arbitrary URL and return raw bytes (used for image downloads). */
+    private static function httpGetRaw(string $url): ?string
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($body === false || $code !== 200) return null;
+        return is_string($body) ? $body : null;
+    }
+
+    /**
+     * GET /api/courses/<groupId>/image — streams the stored banner.
+     * Authenticated (any logged-in user). Falls through to 404 when the
+     * course has no synced image.
+     */
+    public static function serveCourseImage(string $groupId): void
+    {
+        Auth::requireUser();
+        $dir = self::storageDirCourses();
+        $candidates = glob($dir . '/' . $groupId . '.*') ?: [];
+        if (!$candidates) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'not_found']);
+            return;
+        }
+        $path = $candidates[0];
+        $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $mimeMap = [
+            'png' => 'image/png', 'gif' => 'image/gif', 'webp' => 'image/webp',
+            'svg' => 'image/svg+xml', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+        ];
+        $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($path));
+        // Banner rarely changes; let the browser cache it for a day.
+        header('Cache-Control: private, max-age=86400');
+        readfile($path);
     }
 
     // -----------------------------------------------------------
