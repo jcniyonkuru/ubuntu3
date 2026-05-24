@@ -36,6 +36,12 @@ final class Sync
                 'facilitatorIds' => 'facilitator_ids',
                 'moodleCourseId' => 'moodle_course_id',
             ],
+            // v0.3.7 — banner image pulled from Moodle. Server populates
+            // image_url to a stable /api/courses/<id>/image path; clients
+            // never push it back.
+            'readonly' => [
+                'imageUrl' => 'image_url',
+            ],
         ],
         'participants' => [
             'table' => 'participants',

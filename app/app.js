@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.20';
+  const APP_VERSION = '0.3.7-dev.21';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -106,6 +106,27 @@
   };
   function thumbIcon(kind) {
     return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
+  }
+  // Course thumbnail: when the server-side Moodle sync has populated an
+  // imageUrl, render it as an <img>; otherwise fall back to the Courses
+  // tab glyph. The img is wrapped in a .thumb container so it picks up
+  // the same 56x56 rounded frame used elsewhere.
+  function courseThumb(g) {
+    const url = g && g.imageUrl;
+    if (!url) return thumbIcon('groups');
+    // Prepend /api if Sync returned a bare /courses/... path so the
+    // browser hits the API base regardless of where the PWA is served.
+    const src = url.startsWith('http') ? url : (url.startsWith('/api') ? url : ('/api' + url));
+    const wrap = el('div', { class: 'thumb' });
+    const img = el('img', { alt: '', src });
+    // If the image fails (offline, deleted server-side, 404), gracefully
+    // swap in the generic icon so the row never shows a broken-image glyph.
+    img.addEventListener('error', () => {
+      wrap.classList.add('thumb--icon');
+      wrap.innerHTML = THUMB_ICONS.groups || '';
+    });
+    wrap.appendChild(img);
+    return wrap;
   }
   // Inline icon for a section heading (h3). Renders an SVG glyph next
   // to the title text, matching the colour and stroke of the tab-bar
@@ -1262,7 +1283,7 @@
       const pCount = participants.filter((p) => p.groupId === g.id).length;
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
         el('div', { class: 'card card--row' }, [
-          thumbIcon('groups'),
+          courseThumb(g),
           el('div', { class: 'grow', style: 'min-width:0' }, [
             el('div', { class: 'card__title' }, g.name || t('common.noName')),
             el('div', { class: 'card__sub' },
@@ -1498,7 +1519,7 @@
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
-          thumbIcon('groups'),
+          courseThumb(group),
           el('div', { style: 'min-width:0' }, [
             el('div', { class: 'card__title' }, [
               document.createTextNode(group.name || t('common.noName')),
@@ -1724,7 +1745,7 @@
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
         el('div', { class: 'card card--row' }, [
-          thumbIcon('groups'),
+          courseThumb(g),
           el('div', { class: 'grow', style: 'min-width:0' }, [
             titleNode,
             el('div', { class: 'card__sub' }, sub)
