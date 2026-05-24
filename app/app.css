@@ -674,6 +674,41 @@ p { margin: 6px 0; }
   outline: none; border-color: var(--brand);
 }
 
+/* Password field + eye-toggle. The wrapper layouts the input full-width
+   and overlays a transparent button at the right edge. The input keeps
+   its native styling (border, padding) but adds extra right padding so
+   the typed characters never collide with the eye glyph. */
+.pw-wrap {
+  position: relative;
+  display: block;
+}
+.pw-wrap input {
+  width: 100%;
+  padding: 12px 44px 12px 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+}
+.pw-wrap input:focus { outline: none; border-color: var(--brand); }
+.pw-toggle {
+  position: absolute;
+  top: 50%; right: 4px;
+  transform: translateY(-50%);
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0;
+}
+.pw-toggle:hover  { color: var(--brand); background: var(--brand-tint); }
+.pw-toggle:active { color: var(--brand-dark); }
+.pw-toggle svg { width: 22px; height: 22px; }
+
 /* v0.3.7 — rich-text editor for story.text */
 .rt-wrapper {
   border: 1px solid var(--border);
