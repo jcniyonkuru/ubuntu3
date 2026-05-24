@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.5';
+  const APP_VERSION = '0.3.7-dev.6';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -987,9 +987,9 @@
     }
 
     // Information tiles — render only those the user has enabled in
-    // Settings, in the configured order. Participants is intentionally
-    // absent here — that count only makes sense in a course's context, not
-    // as a global headline.
+    // Settings, in the configured order. The participants count honours
+    // the 'my courses only' filter via the earlier participants array
+    // (already scoped to facilitated courses when the flag is on).
     const tileBuilders = {
       sessionsMonth: () => linkTile(
         t('dash.tile.sessionsMonth'),
@@ -1003,7 +1003,13 @@
         t('dash.storiesSub', { n: storiesConsent }),
         '#/stories'
       ),
-      groups: () => linkTile(t('dash.tile.groups'),  groups.length,  null, '#/groups'),
+      groups: () => linkTile(t('dash.tile.groups'), groups.length, null, '#/groups'),
+      participants: () => linkTile(
+        t('dash.tile.participants'),
+        totalP,
+        totalP ? t('dash.sexSub', { f: pct(sexCounts.F || 0), m: pct(sexCounts.M || 0) }) : null,
+        '#/participants'
+      ),
       cohorts: () => linkTile(t('dash.tile.cohorts'), cohorts.length, null, '#/cohorts'),
     };
     const visibleTileKeys = (dashCfg.tiles || []).filter((k) => tileBuilders[k]);
@@ -2799,10 +2805,12 @@
   // Anything missing falls back to defaults defined here.
   const SETTINGS = (() => {
     const KEY = 'ubuntu30.settings';
-    const ALL_DASH_TILES = ['sessionsMonth', 'stories', 'groups', 'cohorts'];
+    const ALL_DASH_TILES = ['sessionsMonth', 'stories', 'groups', 'participants', 'cohorts'];
     // Default visible tiles + order. Cohorts intentionally OFF — they're
-    // navigational scaffolding, not a headline metric. Participants is not
-    // in the list at all: that count only makes sense inside a course.
+    // navigational scaffolding, not a headline metric. Participants is now
+    // optionally exposed (off by default) — count honours 'my courses only',
+    // so trainers see the size of their cohort at a glance when they want
+    // to.
     const DEFAULT_TILES = ['sessionsMonth', 'stories', 'groups'];
 
     function read() {
@@ -2937,6 +2945,7 @@
           const labelKey = key === 'sessionsMonth' ? 'dash.tile.sessionsMonth'
                          : key === 'stories'       ? 'dash.tile.stories'
                          : key === 'groups'        ? 'dash.tile.groups'
+                         : key === 'participants'  ? 'dash.tile.participants'
                          : /* cohorts */             'dash.tile.cohorts';
           return el('label', { class: 'popup__row' }, [cb, el('span', null, t(labelKey))]);
         }))
