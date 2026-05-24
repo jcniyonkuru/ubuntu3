@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.5';
+  const APP_VERSION = '0.3.7-dev.6';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1147,7 +1147,7 @@
     const groups = (await DB.byIndex('groups', 'cohortId', cohort.id))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', null, [
           el('div', { class: 'card__title' }, cohort.name || t('common.noName')),
@@ -1406,7 +1406,7 @@
     const sessions = (await DB.byIndex('sessions', 'groupId', group.id))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', null, [
           el('div', { class: 'card__title' }, [
@@ -1522,7 +1522,7 @@
     const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
     sessSection.appendChild(el('div', { class: 'row between' }, [
       el('h3', null, t('group.sessionsHeading', { n: sessions.length })),
-      el('a', { class: 'btn btn--sm btn--ghost', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
+      el('a', { class: 'btn btn--sm', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
     ]));
     if (!sessions.length) {
       sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
@@ -2200,7 +2200,7 @@
       go('/sessions/' + dup.id + '/edit');
     }
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', null, [
           el('div', { class: 'card__title' }, session.theme || t('common.noTheme')),

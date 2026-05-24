@@ -309,6 +309,14 @@ p { margin: 6px 0; }
 }
 .card__title { font-weight: 600; font-size: 16px; margin: 0 0 4px; }
 .card__sub { color: var(--muted); font-size: 13px; }
+/* Accent variant — light brand-tinted header card used on
+   Course / Cohort / Session detail pages so the top card stands out
+   from the lists below it. */
+.card--accent {
+  background: var(--brand-tint);
+  border-color: rgba(183, 59, 63, 0.22);
+}
+.card--accent .card__title { color: var(--brand-dark); }
 .card-link {
   display: block; text-decoration: none; color: inherit;
 }
