@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.15';
+  const APP_VERSION = '0.3.7-dev.16';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -959,7 +959,21 @@
     // greeting, then reads the user's preferences for what to render.
     const settings = SETTINGS.read();
     const dashCfg  = SETTINGS.dashCfg(settings);
-    root.appendChild(el('p', { class: 'muted small' }, t('dash.hello', { name: CURRENT_AUTHOR.name || '' })));
+    // Greeting with the trainer's name in bold. We split the translated
+    // sentence around the {name} placeholder so the surrounding wording
+    // stays in the FR/EN/RN translation files. The marker () is a
+    // private control char that never appears in real translations.
+    (() => {
+      const raw = t('dash.hello', { name: '' });
+      const i = raw.indexOf('');
+      const before = i >= 0 ? raw.slice(0, i) : raw;
+      const after  = i >= 0 ? raw.slice(i + 1) : '';
+      root.appendChild(el('p', { class: 'dash-hello' }, [
+        document.createTextNode(before),
+        el('strong', null, CURRENT_AUTHOR.name || ''),
+        document.createTextNode(after)
+      ]));
+    })();
 
     // "Pick up where you left off": last session, last story, last course —
     // in that order, left-to-right. Always rendered, even before any of the
