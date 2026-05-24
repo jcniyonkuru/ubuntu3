@@ -74,7 +74,10 @@ body {
 .icon-btn:active { background: rgba(255,255,255,.15); }
 .net-dot {
   width: 10px; height: 10px; border-radius: 50%;
-  background: #fff;
+  /* Green when online — reads as a familiar "good signal" cue on the
+     red header. Falls back to a hex value in case --success isn't
+     loaded yet during the first paint. */
+  background: var(--success, #2D8659);
   box-shadow: 0 0 0 2px rgba(255,255,255,.4);
   display: inline-block;
 }
