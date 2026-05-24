@@ -333,6 +333,17 @@ p { margin: 6px 0; }
 }
 .card-link:active .card { background: #FAFAFA; }
 
+/* Dashboard greeting — bigger than a generic .small muted line so the
+   trainer's name lands as a personal cue, while keeping the snapshot
+   sentence next to it. <strong> inside picks up the brand colour. */
+.dash-hello {
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--text);
+  margin: 4px 0 14px;
+}
+.dash-hello strong { color: var(--brand-dark); font-weight: 700; }
+
 /* dashboard KPIs */
 .kpis {
   display: grid;
