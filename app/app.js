@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.19';
+  const APP_VERSION = '0.3.7-dev.20';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -310,7 +310,12 @@
     const btn = $('#bell-btn'); const dot = $('#bell-dot');
     if (!btn) return;
     btn.dataset.count = String(n || 0);
-    if (dot) dot.hidden = !n;
+    if (dot) {
+      // Cap displayed count so the badge stays compact. Above 99 we
+      // show '99+' — the popup still lists the full breakdown.
+      dot.textContent = n > 99 ? '99+' : (n ? String(n) : '');
+      dot.hidden = !n;
+    }
   }
   async function pollMoodleNews() {
     if (!window.API || !window.API.isAuthenticated() || !navigator.onLine) return;
