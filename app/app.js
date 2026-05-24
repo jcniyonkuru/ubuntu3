@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.1';
+  const APP_VERSION = '0.3.7-dev.2';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
