@@ -178,6 +178,10 @@ body {
 }
 .lang-btn:active { background: rgba(255,255,255,.28); }
 .lang-btn[aria-expanded="true"] { background: rgba(255,255,255,.28); }
+/* Author display:inline-flex above wins over the browser default
+   [hidden] { display: none }, so the hidden attribute alone wouldn't
+   work — be explicit. Used when the header lang button is hidden. */
+.lang-btn[hidden] { display: none; }
 .lang-btn__code { line-height: 1; }
 
 .lang-menu {
