@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.6';
+  const APP_VERSION = '0.3.7-dev.8';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -85,6 +85,62 @@
     if (code === 'F') return t('sex.f');
     if (code === 'M') return t('sex.m');
     return t('sex.nb');
+  }
+
+  // ---------- list-row thumbnails ----------
+  // SVG glyphs mirror the bottom tab bar so every list row carries the
+  // same visual cue as the tab it belongs to. Story rows prefer the
+  // attached photo (or first inline rich-text image) and only fall back
+  // to the Stories icon when nothing is embedded.
+  const THUMB_ICONS = {
+    cohorts:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zM8 11c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>',
+    groups:       '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
+    sessions:     '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5C3.9 4 3 4.9 3 6v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM7 12h5v5H7z"/></svg>',
+    stories:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
+    participants: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+    audio:        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>',
+    attendance:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>'
+  };
+  function thumbIcon(kind) {
+    return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
+  }
+  // Inline icon for a section heading (h3). Renders an SVG glyph next
+  // to the title text, matching the colour and stroke of the tab-bar
+  // icon for that entity type. `extra` lets callers tack an action
+  // button onto the right side (e.g. + New).
+  function sectionHeading(kind, text, extra) {
+    const h = el('h3', { class: 'section-h' }, [
+      el('span', { class: 'section-h__icon', html: THUMB_ICONS[kind] || '' }),
+      el('span', { class: 'section-h__text' }, text)
+    ]);
+    if (extra) {
+      return el('div', { class: 'row between section-h__row' }, [h, extra]);
+    }
+    return h;
+  }
+  // Build a thumbnail for a story row. Preference order:
+  //   1. attached photo Blob
+  //   2. first <img src="data:image/..."> embedded in the rich-text body
+  //   3. an audio glyph (when only audio is attached)
+  //   4. the generic Stories tab icon
+  function storyThumb(s) {
+    if (s.photo) {
+      const wrap = el('div', { class: 'thumb' });
+      const img  = el('img', { alt: '' });
+      img.src = URL.createObjectURL(s.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      wrap.appendChild(img);
+      return wrap;
+    }
+    const html = s.text || '';
+    const m = html.match(/<img\s+[^>]*src=["'](data:image\/[^"']+)["'][^>]*>/i);
+    if (m) {
+      const wrap = el('div', { class: 'thumb' });
+      wrap.appendChild(el('img', { alt: '', src: m[1] }));
+      return wrap;
+    }
+    if (s.audio) return thumbIcon('audio');
+    return thumbIcon('stories');
   }
 
   // ============================================================
@@ -1097,9 +1153,12 @@
         t('cohorts.sub', { g: cohortGroups.length, p: cohortPCount })
       ].filter(Boolean).join(' · ');
       root.appendChild(el('a', { class: 'card-link', href: `#/cohorts/${c.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, c.name || t('common.noName')),
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('cohorts'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, c.name || t('common.noName')),
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
@@ -1155,22 +1214,24 @@
 
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, cohort.name || t('common.noName')),
-          el('div', { class: 'card__sub' }, [
-            cohort.region || t('cohort.unknownRegion'),
-            cohort.startDate ? ' · ' + formatDate(cohort.startDate) : '',
-            cohort.endDate ? ' → ' + formatDate(cohort.endDate) : ''
-          ].join(''))
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          thumbIcon('cohorts'),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, cohort.name || t('common.noName')),
+            el('div', { class: 'card__sub' }, [
+              cohort.region || t('cohort.unknownRegion'),
+              cohort.startDate ? ' · ' + formatDate(cohort.startDate) : '',
+              cohort.endDate ? ' → ' + formatDate(cohort.endDate) : ''
+            ].join(''))
+          ])
         ]),
         el('a', { class: 'btn btn--sm btn--ghost', href: `#/cohorts/${cohort.id}/edit` }, t('common.edit'))
       ])
     ]));
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('h3', null, t('cohort.groupsHeading', { n: groups.length })),
+    root.appendChild(sectionHeading('groups', t('cohort.groupsHeading', { n: groups.length }),
       el('a', { class: 'btn btn--sm', href: `#/cohorts/${cohort.id}/groups/new` }, t('cohort.newGroup'))
-    ]));
+    ));
 
     if (!groups.length) {
       root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody'), `#/cohorts/${cohort.id}/groups/new`, t('cohort.noGroupsCta')));
@@ -1181,20 +1242,23 @@
     groups.forEach((g) => {
       const pCount = participants.filter((p) => p.groupId === g.id).length;
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, g.name || t('common.noName')),
-          el('div', { class: 'card__sub' },
-            // v0.3.5i — facilitator can be a list now; the legacy .facilitator
-            // text always mirrors the joined names of facilitatorIds, so it's
-            // safe to display directly. Plural label kicks in when there's a
-            // comma in the joined string (cheap heuristic).
-            (g.facilitator
-              ? (g.facilitator.indexOf(',') >= 0
-                  ? t('cohort.facilitatedByMany', { names: g.facilitator })
-                  : t('cohort.facilitatedBy',     { name:  g.facilitator }))
-              : t('cohort.noFacilitator')) +
-            ' · ' + t('cohort.participants', { n: pCount })
-          )
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('groups'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, g.name || t('common.noName')),
+            el('div', { class: 'card__sub' },
+              // v0.3.5i — facilitator can be a list now; the legacy .facilitator
+              // text always mirrors the joined names of facilitatorIds, so it's
+              // safe to display directly. Plural label kicks in when there's a
+              // comma in the joined string (cheap heuristic).
+              (g.facilitator
+                ? (g.facilitator.indexOf(',') >= 0
+                    ? t('cohort.facilitatedByMany', { names: g.facilitator })
+                    : t('cohort.facilitatedBy',     { name:  g.facilitator }))
+                : t('cohort.noFacilitator')) +
+              ' · ' + t('cohort.participants', { n: pCount })
+            )
+          ])
         ])
       ]));
     });
@@ -1414,16 +1478,19 @@
 
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, [
-            document.createTextNode(group.name || t('common.noName')),
-            group.moodleCourseId
-              ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
-              : null
-          ]),
-          el('div', { class: 'card__sub' },
-            (cohort ? cohort.name : t('group.unknownCohort')) + (group.facilitator ? ' · ' + group.facilitator : '')
-          )
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          thumbIcon('groups'),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, [
+              document.createTextNode(group.name || t('common.noName')),
+              group.moodleCourseId
+                ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+                : null
+            ]),
+            el('div', { class: 'card__sub' },
+              (cohort ? cohort.name : t('group.unknownCohort')) + (group.facilitator ? ' · ' + group.facilitator : '')
+            )
+          ])
         ]),
         el('a', { class: 'btn btn--sm btn--ghost', href: `#/groups/${group.id}/edit` }, t('common.edit'))
       ])
@@ -1472,10 +1539,9 @@
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.
     const partsSection = el('div', { class: 'course-participants' });
-    partsSection.appendChild(el('div', { class: 'row between' }, [
-      el('h3', null, t('group.participantsHeading', { n: participants.length })),
+    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length }),
       el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
-    ]));
+    ));
     if (!participants.length) {
       partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody'), `#/groups/${group.id}/participants/new`, t('group.noParticipantsCta')));
     } else {
@@ -1500,6 +1566,7 @@
           style: isDropped ? 'opacity:.62' : ''
         }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('participants'),
             el('div', { class: 'grow' }, [
               titleNode,
               el('div', { class: 'list-item__sub' }, sub)
@@ -1526,16 +1593,16 @@
     // session — when the trainer types something, they expect the filter
     // to match the entire course history, not just the most recent 5.
     const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
-    sessSection.appendChild(el('div', { class: 'row between' }, [
-      el('h3', null, t('group.sessionsHeading', { n: sessions.length })),
+    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length }),
       el('a', { class: 'btn btn--sm', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
-    ]));
+    ));
     if (!sessions.length) {
       sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
       sessions.forEach((s) => {
         sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
               el('div', { class: 'list-item__sub' }, formatDate(s.date))
@@ -1628,9 +1695,12 @@
           : null
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          titleNode,
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('groups'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            titleNode,
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
@@ -1682,6 +1752,7 @@
         style: isDropped ? 'opacity:.62' : ''
       }, [
         el('div', { class: 'list-item' }, [
+          thumbIcon('participants'),
           el('div', { class: 'grow' }, [
             titleNode,
             el('div', { class: 'list-item__sub' }, sub)
@@ -2076,6 +2147,7 @@
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
         el('div', { class: 'card' }, [
           el('div', { class: 'row between' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow', style: 'min-width:0' }, [
               titleRow,
               el('div', { class: 'card__sub' }, [formatDate(s.date), groupName(s.groupId), s.location].filter(Boolean).join(' · '))
@@ -2208,13 +2280,16 @@
 
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, session.theme || t('common.noTheme')),
-          el('div', { class: 'card__sub' }, [
-            formatDate(session.date),
-            group ? group.name : t('session.unknownGroup'),
-            session.location
-          ].filter(Boolean).join(' · '))
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          thumbIcon('sessions'),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, session.theme || t('common.noTheme')),
+            el('div', { class: 'card__sub' }, [
+              formatDate(session.date),
+              group ? group.name : t('session.unknownGroup'),
+              session.location
+            ].filter(Boolean).join(' · '))
+          ])
         ]),
         el('div', { class: 'row', style: 'gap:6px' }, [
           el('button', { class: 'btn btn--sm btn--ghost', type: 'button', onClick: duplicateSession }, t('session.duplicate')),
@@ -2224,7 +2299,10 @@
       session.notes ? el('p', { class: 'small', style: 'margin-top:8px; white-space:pre-wrap' }, session.notes) : null
     ]));
 
-    const heading = el('h3', null, t('session.attendanceHeading', { n: participants.length }));
+    const heading = el('h3', { class: 'section-h' }, [
+      el('span', { class: 'section-h__icon', html: THUMB_ICONS.attendance }),
+      el('span', { class: 'section-h__text' }, t('session.attendanceHeading', { n: participants.length }))
+    ]);
     root.appendChild(heading);
 
     const presentCountEl = el('p', { class: 'muted small' });
@@ -2583,23 +2661,12 @@
     const participants = await DB.all('participants');
 
     stories.forEach((s) => {
-      const thumb = el('div', { class: 'thumb' });
-      if (s.photo) {
-        const img = el('img', { alt: '' });
-        img.src = URL.createObjectURL(s.photo);
-        img.onload = () => URL.revokeObjectURL(img.src);
-        thumb.appendChild(img);
-      } else if (s.audio) {
-        thumb.textContent = 'AUDIO';
-      } else {
-        thumb.textContent = 'TXT';
-      }
       const tag = s.sessionId ? ((sessions.find((x) => x.id === s.sessionId) || {}).theme || t('stories.tag.session'))
         : s.participantId ? ((participants.find((x) => x.id === s.participantId) || {}).firstName || t('stories.tag.participant'))
         : t('stories.tag.free');
       root.appendChild(el('a', { class: 'card-link', href: `#/stories/${s.id}/edit` }, [
         el('div', { class: 'list-item' }, [
-          thumb,
+          storyThumb(s),
           el('div', { class: 'grow' }, [
             el('div', { class: 'list-item__title' }, (() => {
               const plain = stripHtml(s.text || '');

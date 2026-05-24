@@ -870,6 +870,44 @@ p { margin: 6px 0; }
   flex-shrink: 0;
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Icon-only thumb used on list rows that don't have a photo. Mirrors the
+   tab-bar glyph so each list visually maps to its tab. */
+.thumb--icon {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.thumb--icon svg { width: 30px; height: 30px; }
+
+/* card variant that lays its children out in a row so a thumb can sit
+   next to the title/sub block on Cohort / Course / Session list rows. */
+.card.card--row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card.card--row > .grow { min-width: 0; }
+
+/* Section heading with a leading SVG icon — used on Attendance, the
+   Participants/Sessions sub-headings inside a course, and the Courses
+   sub-heading inside a cohort. Tone of the icon matches the brand red
+   so the heading visually pairs with its detail card above. */
+.section-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+.section-h__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.section-h__icon svg { width: 22px; height: 22px; }
+.section-h__text { line-height: 1.2; }
+.section-h__row .section-h { margin: 0; }
 
 /* ---------- pills ---------- */
 .pill {
