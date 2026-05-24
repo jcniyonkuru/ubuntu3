@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.2';
+  const APP_VERSION = '0.3.7-dev.3';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1510,7 +1510,6 @@
         placeholder: t('group.searchParticipantsPh') || t('common.searchPh'),
         itemSelector: '.course-participant',
         position: 'beforeItems',
-        minToShow: 4,
       });
     }
     root.appendChild(partsSection);
@@ -3620,7 +3619,11 @@
   function attachListSearch(parent, opts) {
     opts = opts || {};
     const itemSel    = opts.itemSelector || '.card-link';
-    const minToShow  = opts.minToShow || 4;
+    // Default to 1 so the search bar shows as soon as there's any content,
+    // matching iOS-style list UX (the bar is always there, predictable
+    // muscle memory). Callers that explicitly want to hide it on small
+    // lists can pass minToShow:4 etc.
+    const minToShow  = (opts.minToShow != null) ? opts.minToShow : 1;
     const placeholder = opts.placeholder || (t('common.searchPh') || 'Search…');
     const key        = opts.key || null;
 
