@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.8';
+  const APP_VERSION = '0.3.7-dev.9';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -669,7 +669,7 @@
       el('p', { class: 'muted' }, t('auth.loginIntro')),
       errBox,
       fg(t('auth.email'), el('input', { name: 'email', type: 'text', required: true, autocomplete: 'username' })),
-      fg(t('auth.password'), el('input', { name: 'password', type: 'password', required: true, autocomplete: 'current-password' })),
+      fg(t('auth.password'), passwordInput({ name: 'password', required: true, autocomplete: 'current-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.loginCta')),
       el('p', { class: 'small muted', style: 'text-align:center; margin:10px 0 0' }, t('auth.elearningHint')),
       el('div', { class: 'row', style: 'justify-content:center; margin-top:8px' },
@@ -822,8 +822,8 @@
       el('h2', null, t('auth.resetTitle')),
       el('p', { class: 'muted small' }, t('auth.resetIntro')),
       errBox, successBox,
-      fg(t('auth.newPw'), el('input', { name: 'next', type: 'password', required: true, autocomplete: 'new-password' })),
-      fg(t('auth.newPwConfirm'), el('input', { name: 'confirm', type: 'password', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPw'), passwordInput({ name: 'next', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPwConfirm'), passwordInput({ name: 'confirm', required: true, autocomplete: 'new-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.resetCta'))
     ]);
     renderAuthOverlay(root, [form]);
@@ -862,9 +862,9 @@
       el('h2', null, t('auth.changePwTitle')),
       el('p', { class: 'muted small' }, t('auth.changePwIntro')),
       errBox,
-      fg(t('auth.currentPw'), el('input', { name: 'current', type: 'password', required: true, autocomplete: 'current-password' })),
-      fg(t('auth.newPw'), el('input', { name: 'next', type: 'password', required: true, autocomplete: 'new-password' })),
-      fg(t('auth.newPwConfirm'), el('input', { name: 'confirm', type: 'password', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.currentPw'), passwordInput({ name: 'current', required: true, autocomplete: 'current-password' })),
+      fg(t('auth.newPw'), passwordInput({ name: 'next', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPwConfirm'), passwordInput({ name: 'confirm', required: true, autocomplete: 'new-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.changePwCta'))
     ]);
     root.appendChild(form);
@@ -3300,6 +3300,35 @@
 
   function fg(label, control) {
     return el('div', { class: 'form-group' }, [el('label', null, label), control]);
+  }
+
+  // Password field with an eye toggle so the trainer can reveal what
+  // they typed — helpful on touch keyboards where it's easy to mistype
+  // an uppercase letter or a number. Accepts the same attrs as a plain
+  // <input>, forces type='password' at first paint, and returns a
+  // wrapper element so fg() can slot it under a <label>.
+  const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+  const EYE_OFF_SVG  = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92C21.16 15.05 22.49 13.65 23 12c-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.27-3.97.74l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 9.85 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53a5 5 0 0 1-5-5c0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16a3 3 0 0 0-3-3l-.17.01z"/></svg>';
+  function passwordInput(attrs) {
+    const input = el('input', Object.assign({}, attrs || {}, { type: 'password' }));
+    const btn = el('button', {
+      type: 'button',
+      class: 'pw-toggle',
+      'aria-label': t('auth.showPw'),
+      'aria-pressed': 'false',
+      tabindex: '-1',
+      html: EYE_OPEN_SVG,
+    });
+    btn.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.innerHTML = showing ? EYE_OPEN_SVG : EYE_OFF_SVG;
+      btn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+      btn.setAttribute('aria-label', showing ? t('auth.showPw') : t('auth.hidePw'));
+      // Keep keyboard focus on the input so typing isn't interrupted
+      input.focus();
+    });
+    return el('div', { class: 'pw-wrap' }, [input, btn]);
   }
   function selectEl(name, options, value, required, onChange) {
     const sel = el('select', { name, required: !!required });
