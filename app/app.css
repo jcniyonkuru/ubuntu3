@@ -49,13 +49,16 @@ body {
 .app-header__title {
   flex: 1;
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 800;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Forward-nav button hidden for now — trainers asked for Back only.
+   The JS that powers it stays in place; only the visual is suppressed. */
+#nav-fwd-btn { display: none !important; }
 .app-header__status { display: flex; align-items: center; gap: 10px; }
 .icon-btn {
   background: transparent;
