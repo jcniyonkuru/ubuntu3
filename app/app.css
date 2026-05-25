@@ -371,6 +371,34 @@ p { margin: 6px 0; }
 .session-photo-banner__delete:hover { background: rgba(0, 0, 0, 0.75); }
 .session-photo-banner__delete svg { width: 18px; height: 18px; }
 
+/* Voice-note strip — sits between the photo banner and the session
+   header card. Holds a native <audio controls> player and a delete X
+   on the right so the trainer can drop the memo as easily as a photo. */
+.session-audio-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  background: var(--brand-tint);
+  border: 1px solid rgba(183, 59, 63, 0.15);
+  border-radius: var(--radius);
+  margin: 0 0 12px;
+}
+.session-audio-strip audio {
+  flex: 1; min-width: 0;
+  height: 36px;
+}
+.session-audio-strip__delete {
+  background: transparent;
+  border: 0; padding: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+}
+.session-audio-strip__delete:hover { color: var(--brand); background: rgba(255,255,255,.5); }
+.session-audio-strip__delete svg { width: 18px; height: 18px; }
+
 /* Accent variant — light brand-tinted header card used on
    Course / Cohort / Session detail pages so the top card stands out
    from the lists below it. */
@@ -941,6 +969,18 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* Recording state — used while holding the Voice circle on session
+   detail. The icon disc pulses and turns brand-red so the trainer
+   gets clear visual feedback that audio capture is live. */
+.action-circle.is-recording .action-circle__icon {
+  background: var(--brand);
+  color: #fff;
+  animation: ubuntu3-pulse 1s ease-in-out infinite;
+}
+@keyframes ubuntu3-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.12); }
+}
 .action-circle__label {
   font-size: 12px;
   line-height: 1.2;

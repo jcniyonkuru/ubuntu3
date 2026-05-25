@@ -125,12 +125,12 @@ $routes = [
     ['POST',   '#^/stories/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::download($id, $kind)],
     ['DELETE', '#^/stories/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::delete($id, $kind)],
 
-    // v0.3.8 — session photo (visual proof). Mirrors the stories pattern
-    // but with a single hard-coded kind=photo.
-    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::uploadSessionPhoto($id)],
-    ['GET',    '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::downloadSessionPhoto($id)],
-    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/photo/get$#', fn($id) => Media::downloadSessionPhoto($id)],
-    ['DELETE', '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::deleteSessionPhoto($id)],
+    // v0.3.8 — session media (photo + audio voice note). Mirrors the
+    // stories pattern; the same handler covers both kinds.
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::uploadSessionMedia($id, $kind)],
+    ['GET',    '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
+    ['DELETE', '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::deleteSessionMedia($id, $kind)],
 ];
 
 try {
