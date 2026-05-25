@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.1';
+  const APP_VERSION = '0.3.8-dev.2';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2851,6 +2851,24 @@
     const attSearch = attendanceList.querySelector('.list-search');
     if (attSearch) attSearch.after(sessActions);
     else attendanceList.parentNode.insertBefore(sessActions, attendanceList);
+
+    // v0.3.8 — Quick session resume. When the session is dated today
+    // (the most likely "trainer just walked into the room" scenario),
+    // skip past the header card and land directly on the Attendance
+    // heading so the toggles are reachable without scrolling. The
+    // trainer can still scroll up for date / theme / location / notes.
+    // We defer to the next frame so the route has fully painted before
+    // we move the viewport — otherwise the browser's own post-hashchange
+    // scroll-to-top fights ours.
+    if (session.date === todayInput()) {
+      requestAnimationFrame(() => {
+        try {
+          if (heading && heading.scrollIntoView) {
+            heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } catch (e) { /* older WebViews — silently no-op */ }
+      });
+    }
   }
 
   // ---------- Stories list ----------
