@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.2';
+  const APP_VERSION = '0.3.8-dev.3';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2360,7 +2360,16 @@
 
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
-      // Only update editable fields when synced — keep the upstream values intact
+      // Defensive: when navigating in from /sessions/new (no groupId in
+      // URL), some browsers leave the <select required> with an empty
+      // .value until the user explicitly interacts with it, which silently
+      // blocks the create. Forcing the first option here makes the
+      // "Create" tap from the Sessions list behave like the one from a
+      // course detail page.
+      const sel = form.elements['groupId'];
+      if (!synced && sel && !sel.value && sel.options.length) {
+        sel.selectedIndex = 0;
+      }
       if (!synced) {
         session.groupId = form.elements['groupId'].value;
         session.date = form.elements['date'].value;
@@ -2368,8 +2377,17 @@
       }
       session.location = form.elements['location'].value.trim();
       session.notes = form.elements['notes'].value.trim();
-      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      // Wrap in try/catch so any DB / sync error surfaces as a toast
+      // instead of silently looking like "the button does nothing".
+      try {
+        await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      } catch (err) {
+        console.error('[ubuntu30] session save failed', err);
+        toast((err && err.message) || t('common.error'));
+        return;
+      }
       toast(isEdit ? t('session.updated') : t('session.created'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
       go('/sessions/' + session.id);
     } }, [
       synced ? el('div', { class: 'synced-banner', html: t('sync.bannerSession') }) : null,
