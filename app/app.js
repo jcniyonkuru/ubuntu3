@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.24';
+  const APP_VERSION = '0.3.7-dev.25';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1309,9 +1309,12 @@
     }
     // v0.3.5c — cohort detail shows enrolled participants, not walk-ins
     const participants = (await DB.all('participants')).filter((p) => !p.walkInSessionId);
+    // Wrap courses in a section so the search bar can scope to its
+    // children only (not the cohort header card above).
+    const coursesSection = el('div', { class: 'cohort-courses' });
     groups.forEach((g) => {
       const pCount = participants.filter((p) => p.groupId === g.id).length;
-      root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
+      coursesSection.appendChild(el('a', { class: 'card-link cohort-course', href: `#/groups/${g.id}` }, [
         el('div', { class: 'card card--row' }, [
           courseThumb(g),
           el('div', { class: 'grow', style: 'min-width:0' }, [
@@ -1331,6 +1334,13 @@
           ])
         ])
       ]));
+    });
+    root.appendChild(coursesSection);
+    attachListSearch(coursesSection, {
+      key: 'pwa.cohort.' + cohort.id + '.courses',
+      placeholder: t('common.searchPh'),
+      itemSelector: '.cohort-course',
+      position: 'beforeItems',
     });
   }
 
@@ -2520,6 +2530,16 @@
       participants.forEach((p) => attendanceList.appendChild(makeAttendanceRow(p)));
     }
     root.appendChild(attendanceList);
+    // Search bar over the attendance rows — scoped to .att-row so the
+    // walk-in picker below stays unfiltered. Skip on empty rosters.
+    if (participants.length) {
+      attachListSearch(attendanceList, {
+        key: 'pwa.session.' + session.id + '.attendance',
+        placeholder: t('common.searchPh'),
+        itemSelector: '.att-row',
+        position: 'beforeItems',
+      });
+    }
 
     // ---------- Walk-in attendance (picker-first) ----------
     // v0.3.5a — Trainers and admins both see a searchable picker of users in
