@@ -872,7 +872,7 @@ p { margin: 6px 0; }
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  width: 76px;
+  width: 64px;
   background: transparent;
   border: 0;
   padding: 0;
@@ -882,7 +882,7 @@ p { margin: 6px 0; }
   font: inherit;
 }
 .action-circle__icon {
-  width: 60px; height: 60px;
+  width: 48px; height: 48px;
   border-radius: 50%;
   background: #ECECEE;
   color: var(--brand);
@@ -891,7 +891,7 @@ p { margin: 6px 0; }
   justify-content: center;
   transition: background .12s;
 }
-.action-circle__icon svg { width: 28px; height: 28px; }
+.action-circle__icon svg { width: 22px; height: 22px; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }

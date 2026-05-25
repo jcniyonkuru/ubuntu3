@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.23';
+  const APP_VERSION = '0.3.7-dev.24';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1618,7 +1618,7 @@
     // for populated lists (see the placement step after attachListSearch),
     // or directly under the heading for empty lists.
     const partsActions = actionCircles([
-      { icon: ACTION_ICONS.plus, label: t('group.newParticipant'), href: `#/groups/${group.id}/participants/new` }
+      { icon: ACTION_ICONS.plus, label: t('actions.newParticipant'), href: `#/groups/${group.id}/participants/new` }
     ]);
     if (!participants.length) {
       partsSection.appendChild(partsActions);
@@ -1687,7 +1687,7 @@
     // under the search bar when there are sessions, or directly under
     // the heading when the list is empty.
     const sessActions = actionCircles([
-      { icon: ACTION_ICONS.plus, label: t('group.newSession'), href: `#/sessions/new?groupId=${group.id}` }
+      { icon: ACTION_ICONS.plus, label: t('actions.newSession'), href: `#/sessions/new?groupId=${group.id}` }
     ]);
     if (!sessions.length) {
       sessSection.appendChild(sessActions);
