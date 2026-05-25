@@ -926,12 +926,10 @@ p { margin: 6px 0; }
 /* ---------- action circles (iOS Calls-style row under search) ---------- */
 .action-circles {
   display: flex;
-  /* Right-justify so the row hugs the trailing edge of the screen
-     and lines up with the action buttons on the rest of the app
-     (Edit, + buttons, etc., that all sit on the right). When there
-     are enough circles to overflow, scroll left and they read
-     naturally as 1, 2, 3, … from right edge to left. */
-  justify-content: flex-end;
+  /* Left-justified — matches the iOS Phone / Calls layout the strip
+     was modelled on. With many circles, additional items scroll off
+     to the right of the viewport. */
+  justify-content: flex-start;
   gap: 18px;
   padding: 6px 2px 16px;
   margin: 0 0 4px;
