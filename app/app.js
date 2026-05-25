@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.25';
+  const APP_VERSION = '0.3.7-dev.26';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -136,7 +136,10 @@
   // menu or floating action button.
   const ACTION_ICONS = {
     sync: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>',
-    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>'
+    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>',
+    walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
+    course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
+    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -2546,12 +2549,14 @@
     // Ubuntu 3.0. Picking a user marks them present (enrolling them in the
     // course on the fly if they weren't already). A "+ Create new" expander
     // at the bottom handles true first-time walk-ins.
+    // v0.3.7 — the opener is now an action circle in the row under the
+    // attendance search bar. openPanel is declared at function scope so
+    // the circle below the search can call it; the panel itself is built
+    // inside the if(group) block.
+    let openPanel = null;
     if (group) {
       const panel  = el('div', { class: 'card', style: 'margin-top:12px', hidden: true });
-      const openBtn = el('button', {
-        class: 'btn btn--soft btn--block', style: 'margin-top:12px', type: 'button',
-        onClick: () => { panel.hidden = false; openBtn.hidden = true; renderWalkInPicker(); }
-      }, t('session.walkInCta'));
+      openPanel = function () { panel.hidden = false; renderWalkInPicker(); };
 
       /**
        * Mark a user present at this session. If they aren't yet a participant
@@ -2617,7 +2622,7 @@
           panel.appendChild(el('div', { class: 'row', style: 'margin-top:8px; justify-content:flex-end' },
             el('button', {
               class: 'btn btn--ghost btn--sm', type: 'button',
-              onClick: () => { panel.hidden = true; openBtn.hidden = false; }
+              onClick: () => { panel.hidden = true; }
             }, t('common.cancel'))
           ));
           return;
@@ -2749,30 +2754,38 @@
         panel.appendChild(el('div', { class: 'row', style: 'margin-top:14px; justify-content:flex-end' },
           el('button', {
             class: 'btn btn--ghost btn--sm', type: 'button',
-            onClick: () => { panel.hidden = true; openBtn.hidden = false; }
+            onClick: () => { panel.hidden = true; }
           }, t('session.pickListDone'))
         ));
       }
 
-      root.appendChild(openBtn);
       root.appendChild(panel);
     }
 
-    // Link back to the parent Course
-    if (group) {
-      const label = group.name
-        ? t('session.viewCourseCta', { name: group.name })
-        : t('session.viewCourseCtaNoName');
-      root.appendChild(el('a', {
-        class: 'btn btn--ghost btn--block', style: 'margin-top:12px',
-        href: `#/groups/${group.id}`
-      }, label));
-    }
-
-    root.appendChild(el('a', {
-      class: 'btn btn--soft btn--block', style: 'margin-top:12px',
-      href: `#/stories/new?sessionId=${session.id}`
-    }, t('session.addStoryCta')));
+    // v0.3.7 — three actions formerly at the bottom of the page now sit
+    // as iOS-Calls-style circles in one row, slotted under the attendance
+    // search bar. Falls back to underneath the heading when there's no
+    // search (empty roster).
+    const sessActions = actionCircles([
+      group && openPanel ? {
+        icon: ACTION_ICONS.walkIn,
+        label: t('actions.walkIn'),
+        onClick: () => openPanel()
+      } : null,
+      group ? {
+        icon: ACTION_ICONS.course,
+        label: t('actions.viewCourse'),
+        href: '#/groups/' + group.id
+      } : null,
+      {
+        icon: ACTION_ICONS.story,
+        label: t('actions.addStory'),
+        href: '#/stories/new?sessionId=' + session.id
+      }
+    ].filter(Boolean));
+    const attSearch = attendanceList.querySelector('.list-search');
+    if (attSearch) attSearch.after(sessActions);
+    else attendanceList.parentNode.insertBefore(sessActions, attendanceList);
   }
 
   // ---------- Stories list ----------
