@@ -69,6 +69,8 @@ final class Sync
                 'theme' => 'theme',
                 'location' => 'location',
                 'notes' => 'notes',
+                // v0.3.8 — visual proof. Mirrors hasPhoto on stories.
+                'hasPhoto' => 'has_photo',
             ],
             'readonly' => [
                 'source' => 'source',

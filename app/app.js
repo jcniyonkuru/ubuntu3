@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.3';
+  const APP_VERSION = '0.3.8-dev.4';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -140,7 +140,8 @@
     walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
     course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
     story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
-    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>'
+    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2s-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2 1.43 3.2 3.2 3.2zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -2455,6 +2456,25 @@
       go('/sessions/' + dup.id + '/edit');
     }
 
+    // v0.3.8 — session photo banner (visual proof). Renders above the
+    // header card when there's a local Blob. The action circle below
+    // captures / replaces the photo.
+    const photoBanner = el('div', { class: 'session-photo-banner', hidden: true });
+    function renderPhotoBanner() {
+      photoBanner.innerHTML = '';
+      if (session.photo) {
+        const img = el('img', { alt: '' });
+        img.src = URL.createObjectURL(session.photo);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        photoBanner.appendChild(img);
+        photoBanner.hidden = false;
+      } else {
+        photoBanner.hidden = true;
+      }
+    }
+    renderPhotoBanner();
+    root.appendChild(photoBanner);
+
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
@@ -2475,6 +2495,27 @@
       ]),
       session.notes ? el('p', { class: 'small', style: 'margin-top:8px; white-space:pre-wrap' }, session.notes) : null
     ]));
+
+    // Hidden file input for the Photo action circle below. Tapping the
+    // circle triggers a click on this input; on selection we store the
+    // Blob on the session and re-render the banner. Sync engine handles
+    // the upload to /api/sessions/<id>/media/photo on the next pass.
+    const photoInput = el('input', {
+      type: 'file', accept: 'image/*', capture: 'environment',
+      style: 'display:none'
+    });
+    photoInput.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      session.photo = f;
+      session.hasPhoto = true;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoSaved'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    });
+    root.appendChild(photoInput);
 
     const heading = el('h3', { class: 'section-h' }, [
       el('span', { class: 'section-h__icon', html: THUMB_ICONS.attendance }),
@@ -2843,13 +2884,18 @@
     // as iOS-Calls-style circles in one row, slotted under the attendance
     // search bar. Falls back to underneath the heading when there's no
     // search (empty roster).
-    // v0.3.8 — added "All present" as the first circle.
+    // v0.3.8 — added "All present" + "Photo" circles.
     const sessActions = actionCircles([
       participants.length ? {
         icon: ACTION_ICONS.checkAll,
         label: t('actions.allPresent'),
         onClick: markAllPresent
       } : null,
+      {
+        icon: ACTION_ICONS.camera,
+        label: t('actions.photo'),
+        onClick: () => photoInput.click()
+      },
       group && openPanel ? {
         icon: ACTION_ICONS.walkIn,
         label: t('actions.walkIn'),
