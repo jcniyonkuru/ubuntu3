@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.4';
+  const APP_VERSION = '0.3.8-dev.5';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2458,8 +2458,31 @@
 
     // v0.3.8 — session photo banner (visual proof). Renders above the
     // header card when there's a local Blob. The action circle below
-    // captures / replaces the photo.
+    // captures / replaces the photo; the X overlay on the banner
+    // deletes it locally and on the server (best effort if offline).
     const photoBanner = el('div', { class: 'session-photo-banner', hidden: true });
+    async function deletePhoto() {
+      if (!confirm(t('session.photoDeleteConfirm'))) return;
+      // Best-effort server delete first so we don't leave an orphan
+      // file when the row's hasPhoto flips to 0.
+      if (navigator.onLine && session.hasPhoto) {
+        try {
+          await window.API.deleteMediaOn('sessions', session.id, 'photo');
+        } catch (e) {
+          console.warn('[ubuntu30] session photo server delete failed', e);
+          // Continue with local delete — sync engine will eventually
+          // resync the hasPhoto=0 row, and the orphan file can be
+          // cleaned by a future maintenance pass.
+        }
+      }
+      session.photo = null;
+      session.hasPhoto = false;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoDeleted'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    }
     function renderPhotoBanner() {
       photoBanner.innerHTML = '';
       if (session.photo) {
@@ -2467,6 +2490,14 @@
         img.src = URL.createObjectURL(session.photo);
         img.onload = () => URL.revokeObjectURL(img.src);
         photoBanner.appendChild(img);
+        photoBanner.appendChild(el('button', {
+          type: 'button',
+          class: 'session-photo-banner__delete',
+          'aria-label': t('session.photoDelete'),
+          title: t('session.photoDelete'),
+          html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+          onClick: deletePhoto
+        }));
         photoBanner.hidden = false;
       } else {
         photoBanner.hidden = true;

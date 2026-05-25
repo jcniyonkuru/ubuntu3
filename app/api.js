@@ -152,6 +152,19 @@
       }
       return data;
     },
+    async deleteMediaOn(entity, id, kind) {
+      const url = getBase() + '/' + entity + '/' + encodeURIComponent(id) + '/media/' + kind;
+      const token = getToken();
+      const resp = await fetch(url, {
+        method: 'DELETE',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+        credentials: 'omit'
+      });
+      if (!resp.ok) {
+        const e = new Error('HTTP ' + resp.status); e.status = resp.status; throw e;
+      }
+      try { return await resp.json(); } catch (e) { return null; }
+    },
     async fetchMediaOn(entity, id, kind) {
       // POST + /get suffix so corporate proxies (Zscaler etc.) don't intercept
       // an authenticated GET and strip the Authorization header.
