@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.22';
+  const APP_VERSION = '0.3.7-dev.23';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1566,19 +1566,22 @@
       ])
     ]));
 
-    // Sync-from-Ubuntu-eLearning button — pulls sessions + enrolments from
-    // Moodle for every linked course in one shot. Only surfaced when THIS
-    // course is linked to a Moodle course; otherwise the action has nothing
-    // to pull onto this page.
+    // Sync-from-Ubuntu-eLearning — only surfaced when THIS course is linked
+    // to a Moodle course; otherwise the action has nothing to pull. Rendered
+    // as an action circle so it matches the row layout used on the other
+    // list views.
     if (group.moodleCourseId) {
-      const syncBtn = el('button', {
-        class: 'btn btn--soft btn--block',
-        style: 'margin-top:10px',
+      let courseSyncRef = null;
+      root.appendChild(actionCircles([{
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { courseSyncRef = n; },
         onClick: async () => {
           if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-          const orig = syncBtn.textContent;
-          syncBtn.disabled = true;
-          syncBtn.textContent = t('sessions.syncing');
+          const labelEl = courseSyncRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          courseSyncRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
           try {
             const r = await window.API.moodleSync();
             const s = (r && r.summary) || {};
@@ -1598,24 +1601,27 @@
           } catch (err) {
             toast(err.message || t('sync.status.error'));
           } finally {
-            syncBtn.textContent = orig;
-            syncBtn.disabled = false;
+            if (courseSyncRef) {
+              labelEl.textContent = origLabel;
+              courseSyncRef.disabled = false;
+            }
           }
         }
-      }, t('sessions.syncCta'));
-      root.appendChild(syncBtn);
+      }]));
     }
 
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.
     const partsSection = el('div', { class: 'course-participants' });
-    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length }),
-      el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
-    ));
+    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length })));
+    // Action-circle row for + Participant. Slotted under the search bar
+    // for populated lists (see the placement step after attachListSearch),
+    // or directly under the heading for empty lists.
+    const partsActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('group.newParticipant'), href: `#/groups/${group.id}/participants/new` }
+    ]);
     if (!participants.length) {
-      // The + Participant button next to the section heading already
-      // gives the same action — no need for a second CTA inside the
-      // empty state.
+      partsSection.appendChild(partsActions);
       partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody')));
     } else {
       // Active rows first, then dropped (with a pill and faded look)
@@ -1654,15 +1660,19 @@
         ]));
       });
       // Search bar scoped to participant cards only (not the sessions list
-      // below). Placement: beforeItems so the heading + "+ New participant"
-      // row stay above the search — the search slots between heading and
-      // the first participant card.
+      // below). Placement: beforeItems so the heading stays above the
+      // search; the search slots between heading and the first card.
       attachListSearch(partsSection, {
         key: 'pwa.course.' + group.id + '.participants',
         placeholder: t('group.searchParticipantsPh') || t('common.searchPh'),
         itemSelector: '.course-participant',
         position: 'beforeItems',
       });
+      // Slot the action-circle row right after the search bar
+      // (heading → search → action → items).
+      const partsSearchBar = partsSection.querySelector('.list-search');
+      if (partsSearchBar) partsSearchBar.after(partsActions);
+      else partsSection.appendChild(partsActions);
     }
     root.appendChild(partsSection);
 
@@ -1672,10 +1682,15 @@
     // session — when the trainer types something, they expect the filter
     // to match the entire course history, not just the most recent 5.
     const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
-    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length }),
-      el('a', { class: 'btn btn--sm', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
-    ));
+    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length })));
+    // Same pattern as participants: a + Session action circle that sits
+    // under the search bar when there are sessions, or directly under
+    // the heading when the list is empty.
+    const sessActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('group.newSession'), href: `#/sessions/new?groupId=${group.id}` }
+    ]);
     if (!sessions.length) {
+      sessSection.appendChild(sessActions);
       sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
       sessions.forEach((s) => {
@@ -1695,6 +1710,9 @@
         itemSelector: '.course-session',
         position: 'beforeItems',
       });
+      const sessSearchBar = sessSection.querySelector('.list-search');
+      if (sessSearchBar) sessSearchBar.after(sessActions);
+      else sessSection.appendChild(sessActions);
     }
     root.appendChild(sessSection);
   }
