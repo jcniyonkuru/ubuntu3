@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.26';
+  const APP_VERSION = '0.3.7-dev.27';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1302,12 +1302,18 @@
       ])
     ]));
 
-    root.appendChild(sectionHeading('groups', t('cohort.groupsHeading', { n: groups.length }),
-      el('a', { class: 'btn btn--sm', href: `#/cohorts/${cohort.id}/groups/new` }, t('cohort.newGroup'))
-    ));
+    root.appendChild(sectionHeading('groups', t('cohort.groupsHeading', { n: groups.length })));
+    // Action circle for + Course. Slotted under the search bar when
+    // the cohort has at least one course; otherwise sits right under
+    // the heading so trainers can still create the first one.
+    const cohortActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newCourse'),
+        href: `#/cohorts/${cohort.id}/groups/new` }
+    ]);
 
     if (!groups.length) {
-      root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody'), `#/cohorts/${cohort.id}/groups/new`, t('cohort.noGroupsCta')));
+      root.appendChild(cohortActions);
+      root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody')));
       return;
     }
     // v0.3.5c — cohort detail shows enrolled participants, not walk-ins
@@ -1345,6 +1351,11 @@
       itemSelector: '.cohort-course',
       position: 'beforeItems',
     });
+    // Slot the action circle row right after the search bar
+    // (heading → search → action → courses).
+    const cohortSearchBar = coursesSection.querySelector('.list-search');
+    if (cohortSearchBar) cohortSearchBar.after(cohortActions);
+    else coursesSection.appendChild(cohortActions);
   }
 
   // ---------- Group form ----------
