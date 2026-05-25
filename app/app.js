@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7';
+  const APP_VERSION = '0.3.7.1';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -337,9 +337,29 @@
       if (r && r.ok && r.pushed != null) {
         toast(r.pushed > 0 ? t('sync.pushed', { n: r.pushed }) : t('sync.status.idle'));
       }
+      // v0.3.7 — re-render the current view so freshly-pulled rows show
+      // up immediately (the manual refresh used to be a no-op visually).
+      try { await handleRoute(); } catch (e) {}
     });
-    window.SYNC.on('change', (s) => setSyncState(s.status || 'idle'));
-    window.SYNC.getState().then((s) => setSyncState(s.status || 'idle'));
+    // Track the previous status so we can detect a 'syncing' → 'idle'
+    // transition. The boot sequence kicks SYNC.syncNow() without
+    // awaiting it; without this hook, the dashboard's first render
+    // happens before sync finishes and tiles read zero until the
+    // trainer navigates away and back. Auto-refresh kills that race.
+    let prevSyncStatus = 'idle';
+    window.SYNC.on('change', (s) => {
+      const next = (s && s.status) || 'idle';
+      setSyncState(next);
+      if (prevSyncStatus === 'syncing' && next === 'idle') {
+        try { handleRoute(); } catch (e) {}
+      }
+      prevSyncStatus = next;
+    });
+    window.SYNC.getState().then((s) => {
+      const initial = (s && s.status) || 'idle';
+      setSyncState(initial);
+      prevSyncStatus = initial;
+    });
   }
 
   // ============================================================
