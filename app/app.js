@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.8';
+  const APP_VERSION = '0.3.8-dev.9';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -127,6 +127,23 @@
     });
     wrap.appendChild(img);
     return wrap;
+  }
+  // v0.3.8 — Session thumbnail. Prefers the attached photo Blob (the
+  // "visual proof at the start of the session") and falls back to the
+  // generic calendar/icon when none is attached. hasPhoto without a
+  // local Blob still falls back to the icon; the sync engine will
+  // fetch the bytes on the next pass and the next render will show
+  // them.
+  function sessionThumb(s) {
+    if (s && s.photo) {
+      const wrap = el('div', { class: 'thumb' });
+      const img  = el('img', { alt: '' });
+      img.src = URL.createObjectURL(s.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      wrap.appendChild(img);
+      return wrap;
+    }
+    return thumbIcon('sessions');
   }
   // iOS-Calls-style row of round action buttons. Each item:
   //   { key, icon, label, href? | onClick? }
@@ -1743,7 +1760,7 @@
       sessions.forEach((s) => {
         sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
-            thumbIcon('sessions'),
+            sessionThumb(s),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
               el('div', { class: 'list-item__sub' }, formatDate(s.date))
@@ -2308,7 +2325,7 @@
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
         el('div', { class: 'card' }, [
           el('div', { class: 'row between' }, [
-            thumbIcon('sessions'),
+            sessionThumb(s),
             el('div', { class: 'grow', style: 'min-width:0' }, [
               titleRow,
               el('div', { class: 'card__sub' }, [formatDate(s.date), groupName(s.groupId), s.location].filter(Boolean).join(' · '))
