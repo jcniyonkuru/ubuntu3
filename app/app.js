@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.6';
+  const APP_VERSION = '0.3.8-dev.7';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -141,7 +141,8 @@
     course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
     story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
     checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>',
-    camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2s-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2 1.43 3.2 3.2 3.2zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>'
+    camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2s-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2 1.43 3.2 3.2 3.2zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -2559,6 +2560,112 @@
     renderPhotoBanner();
     root.appendChild(photoBanner);
 
+    // v0.3.8 — voice note strip. Sits right below the photo banner.
+    // The recording handler lives on the "Voice" action circle below.
+    const audioStrip = el('div', { class: 'session-audio-strip', hidden: true });
+    async function deleteAudio() {
+      if (!confirm(t('session.audioDeleteConfirm'))) return;
+      if (navigator.onLine && session.hasAudio) {
+        try {
+          await window.API.deleteMediaOn('sessions', session.id, 'audio');
+        } catch (e) {
+          console.warn('[ubuntu30] session audio server delete failed', e);
+        }
+      }
+      session.audio = null;
+      session.hasAudio = false;
+      session.audioUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderAudioStrip();
+      toast(t('session.audioDeleted'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    }
+    function renderAudioStrip() {
+      audioStrip.innerHTML = '';
+      if (!session.audio) { audioStrip.hidden = true; return; }
+      const player = el('audio', { controls: '', preload: 'metadata' });
+      player.src = URL.createObjectURL(session.audio);
+      // Revoke the ObjectURL once the player has loaded metadata to avoid
+      // leaking memory. The audio bytes stay valid because the browser
+      // already has them loaded.
+      player.addEventListener('loadedmetadata', () => URL.revokeObjectURL(player.src));
+      audioStrip.appendChild(player);
+      audioStrip.appendChild(el('button', {
+        type: 'button',
+        class: 'session-audio-strip__delete',
+        'aria-label': t('session.audioDelete'),
+        title: t('session.audioDelete'),
+        html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        onClick: deleteAudio
+      }));
+      audioStrip.hidden = false;
+    }
+    renderAudioStrip();
+    root.appendChild(audioStrip);
+
+    // Recording state held in closure so the action circle's handlers
+    // can flip the same recorder instance. capLimit auto-stops a long
+    // session memo at 90s — sessions only want short reminders, not
+    // multi-minute monologues (those belong in stories).
+    const VOICE_CAP_MS = 90 * 1000;
+    let _voiceRecorder = null;
+    let _voiceChunks = [];
+    let _voiceStream = null;
+    let _voiceCapTimer = null;
+    let _voiceBtnNode = null;   // populated by ref hook on the circle
+    function setRecordingClass(on) {
+      if (_voiceBtnNode) {
+        if (on) _voiceBtnNode.classList.add('is-recording');
+        else _voiceBtnNode.classList.remove('is-recording');
+      }
+    }
+    async function startVoice() {
+      if (_voiceRecorder) return; // already running
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        toast(t('story.audioUnsupported'));
+        return;
+      }
+      try {
+        _voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        toast(t('story.micUnavailable', { err: err.message || err }));
+        return;
+      }
+      _voiceChunks = [];
+      _voiceRecorder = new MediaRecorder(_voiceStream);
+      _voiceRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _voiceChunks.push(e.data); };
+      _voiceRecorder.onstop = async () => {
+        const blob = new Blob(_voiceChunks, { type: _voiceRecorder.mimeType || 'audio/webm' });
+        // Release the mic
+        try { _voiceStream.getTracks().forEach((tr) => tr.stop()); } catch (e) {}
+        _voiceStream = null;
+        _voiceRecorder = null;
+        _voiceChunks = [];
+        clearTimeout(_voiceCapTimer); _voiceCapTimer = null;
+        setRecordingClass(false);
+        // Discard sub-half-second hits — usually accidental taps.
+        if (blob.size < 800) {
+          toast(t('session.audioTooShort'));
+          return;
+        }
+        session.audio = blob;
+        session.hasAudio = true;
+        session.audioUploaded = false;
+        await DB.put('sessions', session, CURRENT_AUTHOR.id);
+        renderAudioStrip();
+        toast(t('session.audioSaved'));
+        if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+      };
+      _voiceRecorder.start();
+      setRecordingClass(true);
+      _voiceCapTimer = setTimeout(() => { if (_voiceRecorder && _voiceRecorder.state === 'recording') _voiceRecorder.stop(); }, VOICE_CAP_MS);
+    }
+    function stopVoice() {
+      if (_voiceRecorder && _voiceRecorder.state === 'recording') {
+        _voiceRecorder.stop();   // onstop handles cleanup + save
+      }
+    }
+
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
@@ -2968,7 +3075,10 @@
     // as iOS-Calls-style circles in one row, slotted under the attendance
     // search bar. Falls back to underneath the heading when there's no
     // search (empty roster).
-    // v0.3.8 — added "All present" + "Photo" circles.
+    // v0.3.8 — added "All present" + "Photo" + "Voice" circles.
+    // Voice uses the ref hook to attach hold-to-record gesture handlers
+    // (pointerdown → start, pointerup/cancel/leave → stop). A plain
+    // onClick would conflict with the hold gesture.
     const sessActions = actionCircles([
       participants.length ? {
         icon: ACTION_ICONS.checkAll,
@@ -2979,6 +3089,31 @@
         icon: ACTION_ICONS.camera,
         label: t('actions.photo'),
         onClick: () => photoInput.click()
+      },
+      {
+        icon: ACTION_ICONS.mic,
+        label: t('actions.voice'),
+        ref: (node) => {
+          _voiceBtnNode = node;
+          // Hold-to-record. pointerdown starts the recorder; releasing
+          // (anywhere — including dragging off the button) stops it.
+          // touchAction:none keeps iOS from scrolling on long-press.
+          node.style.touchAction = 'none';
+          node.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            try { node.setPointerCapture(e.pointerId); } catch (err) {}
+            startVoice();
+            e.preventDefault();
+          });
+          const release = (e) => {
+            try { node.releasePointerCapture(e.pointerId); } catch (err) {}
+            stopVoice();
+          };
+          node.addEventListener('pointerup', release);
+          node.addEventListener('pointercancel', release);
+          // Don't bind a regular onClick — the click event also fires
+          // after a pointerup and would re-trigger if we hooked it.
+        }
       },
       group && openPanel ? {
         icon: ACTION_ICONS.walkIn,
