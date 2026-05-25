@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.0';
+  const APP_VERSION = '0.3.8-dev.1';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -139,7 +139,8 @@
     plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>',
     walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
     course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
-    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>'
+    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
+    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -2793,11 +2794,44 @@
       root.appendChild(panel);
     }
 
+    // v0.3.8 — Bulk attendance. One tap marks every non-walk-in
+    // enrolee present; the trainer then unchecks absentees. Walk-ins
+    // are skipped (they're already present by definition). Already-
+    // present rows are skipped too so we don't bump server_updated_at
+    // for no reason.
+    async function markAllPresent() {
+      if (!participants.length) { toast(t('session.noParticipants')); return; }
+      let changed = 0;
+      for (const p of participants) {
+        let rec = attMap.get(p.id);
+        if (rec && rec.present) continue;        // already present
+        if (rec) {
+          rec.present = true;
+        } else {
+          rec = { sessionId: session.id, participantId: p.id, present: true };
+        }
+        await DB.put('attendance', rec, CURRENT_AUTHOR.id);
+        attMap.set(p.id, rec);
+        changed++;
+      }
+      // Flip the visible checkboxes in one pass — cheaper than re-rendering.
+      attendanceList.querySelectorAll('.att-row .toggle').forEach((cb) => { cb.checked = true; });
+      updateCount();
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+      toast(t('session.allPresentToast', { n: changed }));
+    }
+
     // v0.3.7 — three actions formerly at the bottom of the page now sit
     // as iOS-Calls-style circles in one row, slotted under the attendance
     // search bar. Falls back to underneath the heading when there's no
     // search (empty roster).
+    // v0.3.8 — added "All present" as the first circle.
     const sessActions = actionCircles([
+      participants.length ? {
+        icon: ACTION_ICONS.checkAll,
+        label: t('actions.allPresent'),
+        onClick: markAllPresent
+      } : null,
       group && openPanel ? {
         icon: ACTION_ICONS.walkIn,
         label: t('actions.walkIn'),
