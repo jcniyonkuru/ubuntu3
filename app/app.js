@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.3';
+  const APP_VERSION = '0.3.8-dev.6';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -140,7 +140,8 @@
     walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
     course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
     story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
-    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>'
+    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2s-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2 1.43 3.2 3.2 3.2zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -2455,6 +2456,109 @@
       go('/sessions/' + dup.id + '/edit');
     }
 
+    // v0.3.8 — session photo banner (visual proof). Renders above the
+    // header card when there's a local Blob. The action circle below
+    // captures / replaces the photo; the X overlay on the banner
+    // deletes it locally and on the server (best effort if offline).
+    const photoBanner = el('div', { class: 'session-photo-banner', hidden: true });
+    async function deletePhoto() {
+      if (!confirm(t('session.photoDeleteConfirm'))) return;
+      // Best-effort server delete first so we don't leave an orphan
+      // file when the row's hasPhoto flips to 0.
+      if (navigator.onLine && session.hasPhoto) {
+        try {
+          await window.API.deleteMediaOn('sessions', session.id, 'photo');
+        } catch (e) {
+          console.warn('[ubuntu30] session photo server delete failed', e);
+          // Continue with local delete — sync engine will eventually
+          // resync the hasPhoto=0 row, and the orphan file can be
+          // cleaned by a future maintenance pass.
+        }
+      }
+      session.photo = null;
+      session.hasPhoto = false;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoDeleted'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    }
+    // v0.3.8 — Crop position is stored on session.photoPosition as the
+    // CSS object-position string ("X% Y%"). Default is centered. Drag
+    // the image inside the banner to choose which part is visible;
+    // the new value is persisted on pointer up.
+    function parsePos(str) {
+      const m = String(str || '').match(/(-?\d+(?:\.\d+)?)%\s+(-?\d+(?:\.\d+)?)%/);
+      return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : { x: 50, y: 50 };
+    }
+    function renderPhotoBanner() {
+      photoBanner.innerHTML = '';
+      if (!session.photo) { photoBanner.hidden = true; return; }
+      const pos = parsePos(session.photoPosition);
+      let posX = pos.x, posY = pos.y;
+
+      const img = el('img', { alt: '' });
+      img.style.objectPosition = posX + '% ' + posY + '%';
+      img.src = URL.createObjectURL(session.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+
+      // Drag-to-reposition. Uses pointer events so one path covers
+      // mouse + touch + pen. We anchor on the values at pointerdown,
+      // then translate finger delta into a percentage of the banner
+      // box so movement feels natural regardless of phone width.
+      let dragging = false;
+      let startX = 0, startY = 0, startPosX = 50, startPosY = 50;
+      img.addEventListener('pointerdown', (e) => {
+        // Ignore the right-mouse / middle button so this stays a
+        // primary-tap gesture.
+        if (e.button !== undefined && e.button !== 0) return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPosX = posX; startPosY = posY;
+        try { img.setPointerCapture(e.pointerId); } catch (err) {}
+        img.classList.add('is-dragging');
+        e.preventDefault();
+      });
+      img.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const rect = photoBanner.getBoundingClientRect();
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        // Drag the image rightward (dx>0) → reveal more of the LEFT
+        // side of the photo → object-position X decreases.
+        posX = Math.max(0, Math.min(100, startPosX - (dx / rect.width)  * 100));
+        posY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
+        img.style.objectPosition = posX + '% ' + posY + '%';
+      });
+      async function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        try { img.releasePointerCapture(e.pointerId); } catch (err) {}
+        img.classList.remove('is-dragging');
+        // Persist the final crop. No-op if it matches what was already stored.
+        const next = posX.toFixed(1) + '% ' + posY.toFixed(1) + '%';
+        if (next !== (session.photoPosition || '50.0% 50.0%')) {
+          session.photoPosition = next;
+          await DB.put('sessions', session, CURRENT_AUTHOR.id);
+        }
+      }
+      img.addEventListener('pointerup', endDrag);
+      img.addEventListener('pointercancel', endDrag);
+
+      photoBanner.appendChild(img);
+      photoBanner.appendChild(el('button', {
+        type: 'button',
+        class: 'session-photo-banner__delete',
+        'aria-label': t('session.photoDelete'),
+        title: t('session.photoDelete'),
+        html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        onClick: deletePhoto
+      }));
+      photoBanner.hidden = false;
+    }
+    renderPhotoBanner();
+    root.appendChild(photoBanner);
+
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
@@ -2475,6 +2579,27 @@
       ]),
       session.notes ? el('p', { class: 'small', style: 'margin-top:8px; white-space:pre-wrap' }, session.notes) : null
     ]));
+
+    // Hidden file input for the Photo action circle below. Tapping the
+    // circle triggers a click on this input; on selection we store the
+    // Blob on the session and re-render the banner. Sync engine handles
+    // the upload to /api/sessions/<id>/media/photo on the next pass.
+    const photoInput = el('input', {
+      type: 'file', accept: 'image/*', capture: 'environment',
+      style: 'display:none'
+    });
+    photoInput.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      session.photo = f;
+      session.hasPhoto = true;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoSaved'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    });
+    root.appendChild(photoInput);
 
     const heading = el('h3', { class: 'section-h' }, [
       el('span', { class: 'section-h__icon', html: THUMB_ICONS.attendance }),
@@ -2843,13 +2968,18 @@
     // as iOS-Calls-style circles in one row, slotted under the attendance
     // search bar. Falls back to underneath the heading when there's no
     // search (empty roster).
-    // v0.3.8 — added "All present" as the first circle.
+    // v0.3.8 — added "All present" + "Photo" circles.
     const sessActions = actionCircles([
       participants.length ? {
         icon: ACTION_ICONS.checkAll,
         label: t('actions.allPresent'),
         onClick: markAllPresent
       } : null,
+      {
+        icon: ACTION_ICONS.camera,
+        label: t('actions.photo'),
+        onClick: () => photoInput.click()
+      },
       group && openPanel ? {
         icon: ACTION_ICONS.walkIn,
         label: t('actions.walkIn'),

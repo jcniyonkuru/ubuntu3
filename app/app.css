@@ -331,6 +331,46 @@ p { margin: 6px 0; }
 }
 .card__title { font-weight: 600; font-size: 16px; margin: 0 0 4px; }
 .card__sub { color: var(--muted); font-size: 13px; }
+/* Session photo banner — visual proof of attendance, shown above the
+   session header card when a photo is attached. Height is capped so
+   the banner stays a "thumbnail strip" rather than dominating the
+   screen on tall portraits. */
+.session-photo-banner {
+  position: relative;
+  margin: 0 0 12px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #eee;
+  max-height: 140px;
+}
+.session-photo-banner img {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  display: block;
+  cursor: grab;
+  /* Prevent the page from scrolling when the trainer drags inside the
+     banner to reposition the crop — pointer events handle the gesture. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.session-photo-banner img.is-dragging { cursor: grabbing; }
+.session-photo-banner__delete {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 32px; height: 32px;
+  border: 0; padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.session-photo-banner__delete:hover { background: rgba(0, 0, 0, 0.75); }
+.session-photo-banner__delete svg { width: 18px; height: 18px; }
+
 /* Accent variant — light brand-tinted header card used on
    Course / Cohort / Session detail pages so the top card stands out
    from the lists below it. */

@@ -155,6 +155,134 @@ final class Media
         )->execute([Db::nowUtc(), $storyId]);
     }
 
+    // -------------------------------------------------------------
+    //  v0.3.8 — Session photo (visual proof at the start of a session)
+    // -------------------------------------------------------------
+    //
+    // No separate media table — sessions only ever have one photo, so
+    // we use a deterministic on-disk filename and a single boolean
+    // column on training_sessions. Mime sniffed at upload time.
+
+    private static function sessionStorageDir(): string
+    {
+        $dir = dirname(__DIR__) . '/storage/sessions';
+        if (!is_dir($dir)) {
+            if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+                Response::error('server_misconfigured', 'Storage directory cannot be created. Check permissions on server/storage.', 500);
+            }
+        }
+        return $dir;
+    }
+
+    /** POST /api/sessions/{id}/media/photo  (multipart, file field "file"). */
+    public static function uploadSessionPhoto(string $sessionId): void
+    {
+        $user = Auth::requireUser();
+        $pdo = Db::pdo();
+        $stmt = $pdo->prepare('SELECT id FROM training_sessions WHERE id = ? AND (deleted_at IS NULL) LIMIT 1');
+        $stmt->execute([$sessionId]);
+        if (!$stmt->fetch()) Response::error('not_found', 'Session not found.', 404);
+
+        // Pull file from multipart, fall back to raw body
+        $tmpPath = null; $mime = null; $size = 0;
+        if (!empty($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
+            if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                Response::error('upload_failed', 'Upload error code ' . $_FILES['file']['error'], 400);
+            }
+            $tmpPath = $_FILES['file']['tmp_name'];
+            $mime    = (string) ($_FILES['file']['type'] ?? '');
+            $size    = (int) ($_FILES['file']['size'] ?? 0);
+        } else {
+            $raw = file_get_contents('php://input');
+            if ($raw === false || $raw === '') Response::error('bad_request', 'No file in body.', 400);
+            $size = strlen($raw);
+            $mime = $_SERVER['HTTP_CONTENT_TYPE'] ?? ($_SERVER['CONTENT_TYPE'] ?? '');
+            $tmpPath = tempnam(sys_get_temp_dir(), 'ubuntu30');
+            file_put_contents($tmpPath, $raw);
+        }
+
+        if ($size <= 0) Response::error('bad_request', 'Empty upload.', 400);
+        if ($size > self::MAX_BYTES) Response::error('too_large', 'File exceeds 10 MB.', 413);
+
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $sniff = finfo_file($finfo, $tmpPath);
+            finfo_close($finfo);
+            if ($sniff) $mime = $sniff;
+        }
+        $allowed = self::ALLOWED['photo'];
+        if (!isset($allowed[$mime])) {
+            Response::error('unsupported_media', 'Mime type not allowed: ' . $mime, 415);
+        }
+        $ext = $allowed[$mime];
+
+        $dir = self::sessionStorageDir();
+        // Remove any prior file (could be a different extension)
+        foreach (glob($dir . '/' . $sessionId . '.*') ?: [] as $f) @unlink($f);
+        $path = $dir . '/' . $sessionId . '.' . $ext;
+        if (!@rename($tmpPath, $path)) {
+            if (!@copy($tmpPath, $path)) {
+                Response::error('write_failed', 'Could not write file to storage.', 500);
+            }
+            @unlink($tmpPath);
+        }
+        @chmod($path, 0644);
+
+        $now = Db::nowUtc();
+        $pdo->prepare(
+            "UPDATE training_sessions SET has_photo = 1, server_updated_at = ?, author_id = COALESCE(author_id, ?) WHERE id = ?"
+        )->execute([$now, $user['id'], $sessionId]);
+
+        Response::ok([
+            'mime'      => $mime,
+            'size'      => $size,
+            'sessionId' => $sessionId,
+            'kind'      => 'photo',
+        ]);
+    }
+
+    /** GET /api/sessions/{id}/media/photo */
+    public static function downloadSessionPhoto(string $sessionId): void
+    {
+        Auth::requireUser();
+        $dir = self::sessionStorageDir();
+        $candidates = glob($dir . '/' . $sessionId . '.*') ?: [];
+        if (!$candidates) {
+            // Self-heal: row claims has_photo=1 but there's no file. Clear so
+            // we stop being asked for it on every sync.
+            Db::pdo()->prepare(
+                "UPDATE training_sessions SET has_photo = 0, server_updated_at = ?
+                 WHERE id = ? AND has_photo = 1"
+            )->execute([Db::nowUtc(), $sessionId]);
+            Response::error('not_found', 'Photo not found.', 404);
+        }
+        $path = $candidates[0];
+        $ext  = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $mimeMap = [
+            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',  'webp' => 'image/webp',
+            'heic' => 'image/heic',
+        ];
+        $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($path));
+        header('Cache-Control: private, max-age=86400');
+        readfile($path);
+        exit;
+    }
+
+    /** DELETE /api/sessions/{id}/media/photo */
+    public static function deleteSessionPhoto(string $sessionId): void
+    {
+        Auth::requireUser();
+        $dir = self::sessionStorageDir();
+        foreach (glob($dir . '/' . $sessionId . '.*') ?: [] as $f) @unlink($f);
+        Db::pdo()->prepare(
+            "UPDATE training_sessions SET has_photo = 0, server_updated_at = ? WHERE id = ?"
+        )->execute([Db::nowUtc(), $sessionId]);
+        Response::ok();
+    }
+
     /** DELETE /api/stories/{id}/media/{kind} */
     public static function delete(string $storyId, string $kind): void
     {

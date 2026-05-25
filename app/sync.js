@@ -93,7 +93,8 @@
   /**
    * Download any media bytes we should have but don't yet (best effort).
    * Happens after a pull, so stories another trainer captured become visible
-   * with their photos and audio on this device too.
+   * with their photos and audio on this device too. v0.3.8 — also fetches
+   * session photos when the server has them but this device doesn't.
    */
   async function downloadMissingMedia() {
     const stories = await DB.all('stories');
@@ -126,6 +127,23 @@
         }
       }
       if (changed) await DB.putClean('stories', s);
+    }
+    // v0.3.8 — session photos
+    const sessions = await DB.all('sessions');
+    for (const sess of sessions) {
+      if (!sess.hasPhoto || isBlobLike(sess.photo)) continue;
+      try {
+        sess.photo = await window.API.fetchMediaOn('sessions', sess.id, 'photo');
+        sess.photoUploaded = true;
+        await DB.putClean('sessions', sess);
+        fetched++;
+      } catch (e) {
+        if (e && e.status === 404) {
+          sess.hasPhoto = false;
+          await DB.putClean('sessions', sess);
+        }
+        failed++;
+      }
     }
     return { fetched, failed };
   }
@@ -191,6 +209,22 @@
       if (okAudio && needAudio) s.audioUploaded = true;
       if ((needPhoto && okPhoto) || (needAudio && okAudio)) {
         await DB.putClean('stories', s);
+      }
+    }
+    // v0.3.8 — session photos. Mirrors the story photo path above.
+    const sessions = await DB.all('sessions');
+    for (const sess of sessions) {
+      if (!isBlobLike(sess.photo) || sess.photoUploaded) continue;
+      candidates++;
+      try {
+        await window.API.uploadMediaOn('sessions', sess.id, 'photo', sess.photo);
+        sess.photoUploaded = true;
+        await DB.putClean('sessions', sess);
+        uploaded++;
+        attempts.push({ id: sess.id.slice(0,8), kind: 'session-photo', size: sess.photo.size, ok: true });
+      } catch (e) {
+        console.warn('[ubuntu30 sync] session photo upload failed', sess.id.slice(0, 8), e);
+        attempts.push({ id: sess.id.slice(0,8), kind: 'session-photo', size: sess.photo.size, ok: false, error: String(e && e.message || e) });
       }
     }
     if (candidates > 0 || inspected.length > 0) {

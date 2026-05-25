@@ -124,6 +124,13 @@ $routes = [
     // don't strip the Authorization header on media downloads.
     ['POST',   '#^/stories/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::download($id, $kind)],
     ['DELETE', '#^/stories/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::delete($id, $kind)],
+
+    // v0.3.8 — session photo (visual proof). Mirrors the stories pattern
+    // but with a single hard-coded kind=photo.
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::uploadSessionPhoto($id)],
+    ['GET',    '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::downloadSessionPhoto($id)],
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/photo/get$#', fn($id) => Media::downloadSessionPhoto($id)],
+    ['DELETE', '#^/sessions/([a-f0-9-]{36})/media/photo$#',     fn($id) => Media::deleteSessionPhoto($id)],
 ];
 
 try {
