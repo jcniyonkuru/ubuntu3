@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7-dev.21';
+  const APP_VERSION = '0.3.7-dev.25';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -128,6 +128,36 @@
     wrap.appendChild(img);
     return wrap;
   }
+  // iOS-Calls-style row of round action buttons. Each item:
+  //   { key, icon, label, href? | onClick? }
+  // Renders as a horizontal scroll strip — useful under the search pill
+  // on entity lists where the screen has a handful of one-tap actions
+  // (sync, create new, etc.) that we don't want hiding inside the more
+  // menu or floating action button.
+  const ACTION_ICONS = {
+    sync: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>'
+  };
+  function actionCircles(items) {
+    const row = el('div', { class: 'action-circles' });
+    (items || []).filter(Boolean).forEach((item) => {
+      const isLink = !!item.href;
+      const attrs = isLink
+        ? { class: 'action-circle', href: item.href }
+        : { class: 'action-circle', type: 'button', onClick: item.onClick };
+      if (item.disabled) attrs.disabled = true;
+      const node = el(isLink ? 'a' : 'button', attrs, [
+        el('span', { class: 'action-circle__icon', html: item.icon || '' }),
+        el('span', { class: 'action-circle__label' }, item.label || '')
+      ]);
+      // Hook so callers can mutate state (e.g. show "Syncing…" while a
+      // long action runs) without re-rendering the whole row.
+      if (item.ref) item.ref(node);
+      row.appendChild(node);
+    });
+    return row;
+  }
+
   // Inline icon for a section heading (h3). Renders an SVG glyph next
   // to the title text, matching the colour and stroke of the tab-bar
   // icon for that entity type. `extra` lets callers tack an action
@@ -1174,10 +1204,10 @@
     // v0.3.5c — cohort/course counts exclude session-scoped walk-ins
     const participants = (await DB.all('participants')).filter((p) => !p.walkInSessionId);
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(cohorts.length, 'cohorts.countOne', 'cohorts.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/cohorts/new' }, t('cohorts.new'))
+    root.appendChild(actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newCohort'), href: '#/cohorts/new' }
     ]));
+    root.appendChild(el('p', { class: 'muted' }, tn(cohorts.length, 'cohorts.countOne', 'cohorts.countOther')));
 
     if (!cohorts.length) {
       root.appendChild(emptyState(t('cohorts.emptyTitle'), t('cohorts.emptyBody'), '#/cohorts/new', t('cohorts.emptyCta')));
@@ -1279,9 +1309,12 @@
     }
     // v0.3.5c — cohort detail shows enrolled participants, not walk-ins
     const participants = (await DB.all('participants')).filter((p) => !p.walkInSessionId);
+    // Wrap courses in a section so the search bar can scope to its
+    // children only (not the cohort header card above).
+    const coursesSection = el('div', { class: 'cohort-courses' });
     groups.forEach((g) => {
       const pCount = participants.filter((p) => p.groupId === g.id).length;
-      root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
+      coursesSection.appendChild(el('a', { class: 'card-link cohort-course', href: `#/groups/${g.id}` }, [
         el('div', { class: 'card card--row' }, [
           courseThumb(g),
           el('div', { class: 'grow', style: 'min-width:0' }, [
@@ -1301,6 +1334,13 @@
           ])
         ])
       ]));
+    });
+    root.appendChild(coursesSection);
+    attachListSearch(coursesSection, {
+      key: 'pwa.cohort.' + cohort.id + '.courses',
+      placeholder: t('common.searchPh'),
+      itemSelector: '.cohort-course',
+      position: 'beforeItems',
     });
   }
 
@@ -1536,19 +1576,22 @@
       ])
     ]));
 
-    // Sync-from-Ubuntu-eLearning button — pulls sessions + enrolments from
-    // Moodle for every linked course in one shot. Only surfaced when THIS
-    // course is linked to a Moodle course; otherwise the action has nothing
-    // to pull onto this page.
+    // Sync-from-Ubuntu-eLearning — only surfaced when THIS course is linked
+    // to a Moodle course; otherwise the action has nothing to pull. Rendered
+    // as an action circle so it matches the row layout used on the other
+    // list views.
     if (group.moodleCourseId) {
-      const syncBtn = el('button', {
-        class: 'btn btn--soft btn--block',
-        style: 'margin-top:10px',
+      let courseSyncRef = null;
+      root.appendChild(actionCircles([{
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { courseSyncRef = n; },
         onClick: async () => {
           if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-          const orig = syncBtn.textContent;
-          syncBtn.disabled = true;
-          syncBtn.textContent = t('sessions.syncing');
+          const labelEl = courseSyncRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          courseSyncRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
           try {
             const r = await window.API.moodleSync();
             const s = (r && r.summary) || {};
@@ -1568,24 +1611,27 @@
           } catch (err) {
             toast(err.message || t('sync.status.error'));
           } finally {
-            syncBtn.textContent = orig;
-            syncBtn.disabled = false;
+            if (courseSyncRef) {
+              labelEl.textContent = origLabel;
+              courseSyncRef.disabled = false;
+            }
           }
         }
-      }, t('sessions.syncCta'));
-      root.appendChild(syncBtn);
+      }]));
     }
 
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.
     const partsSection = el('div', { class: 'course-participants' });
-    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length }),
-      el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
-    ));
+    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length })));
+    // Action-circle row for + Participant. Slotted under the search bar
+    // for populated lists (see the placement step after attachListSearch),
+    // or directly under the heading for empty lists.
+    const partsActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newParticipant'), href: `#/groups/${group.id}/participants/new` }
+    ]);
     if (!participants.length) {
-      // The + Participant button next to the section heading already
-      // gives the same action — no need for a second CTA inside the
-      // empty state.
+      partsSection.appendChild(partsActions);
       partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody')));
     } else {
       // Active rows first, then dropped (with a pill and faded look)
@@ -1624,15 +1670,19 @@
         ]));
       });
       // Search bar scoped to participant cards only (not the sessions list
-      // below). Placement: beforeItems so the heading + "+ New participant"
-      // row stay above the search — the search slots between heading and
-      // the first participant card.
+      // below). Placement: beforeItems so the heading stays above the
+      // search; the search slots between heading and the first card.
       attachListSearch(partsSection, {
         key: 'pwa.course.' + group.id + '.participants',
         placeholder: t('group.searchParticipantsPh') || t('common.searchPh'),
         itemSelector: '.course-participant',
         position: 'beforeItems',
       });
+      // Slot the action-circle row right after the search bar
+      // (heading → search → action → items).
+      const partsSearchBar = partsSection.querySelector('.list-search');
+      if (partsSearchBar) partsSearchBar.after(partsActions);
+      else partsSection.appendChild(partsActions);
     }
     root.appendChild(partsSection);
 
@@ -1642,10 +1692,15 @@
     // session — when the trainer types something, they expect the filter
     // to match the entire course history, not just the most recent 5.
     const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
-    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length }),
-      el('a', { class: 'btn btn--sm', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
-    ));
+    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length })));
+    // Same pattern as participants: a + Session action circle that sits
+    // under the search bar when there are sessions, or directly under
+    // the heading when the list is empty.
+    const sessActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newSession'), href: `#/sessions/new?groupId=${group.id}` }
+    ]);
     if (!sessions.length) {
+      sessSection.appendChild(sessActions);
       sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
       sessions.forEach((s) => {
@@ -1665,6 +1720,9 @@
         itemSelector: '.course-session',
         position: 'beforeItems',
       });
+      const sessSearchBar = sessSection.querySelector('.list-search');
+      if (sessSearchBar) sessSearchBar.after(sessActions);
+      else sessSection.appendChild(sessActions);
     }
     root.appendChild(sessSection);
   }
@@ -1676,40 +1734,46 @@
     const groups = applyMyCourses(await DB.all('groups'))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    // Sync-from-Ubuntu-eLearning button — same workflow as on Sessions
-    const syncBtn = el('button', {
-      class: 'btn btn--soft btn--block',
-      onClick: async () => {
-        if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-        const orig = syncBtn.textContent;
-        syncBtn.disabled = true;
-        syncBtn.textContent = t('sessions.syncing');
-        try {
-          const r = await window.API.moodleSync();
-          const s = (r && r.summary) || {};
-          if (s.skipped) {
-            toast(t('sessions.syncSkipped'));
-          } else if ((s.errors || []).length) {
-            console.warn('Sync errors:', s.errors);
-            toast(t('sessions.syncErrors', { n: s.errors.length }));
-          } else {
-            toast(t('sessions.syncResult', {
-              sNew: s.sessions_created || 0,
-              pNew: s.participants_created || 0
-            }));
+    // v0.3.7 — action-circle for Moodle sync (replaces the block button).
+    let coursesSyncRef = null;
+    root.appendChild(actionCircles([
+      {
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { coursesSyncRef = n; },
+        onClick: async () => {
+          if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
+          const labelEl = coursesSyncRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          coursesSyncRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
+          try {
+            const r = await window.API.moodleSync();
+            const s = (r && r.summary) || {};
+            if (s.skipped) {
+              toast(t('sessions.syncSkipped'));
+            } else if ((s.errors || []).length) {
+              console.warn('Sync errors:', s.errors);
+              toast(t('sessions.syncErrors', { n: s.errors.length }));
+            } else {
+              toast(t('sessions.syncResult', {
+                sNew: s.sessions_created || 0,
+                pNew: s.participants_created || 0
+              }));
+            }
+            if (window.SYNC) await window.SYNC.syncNow();
+            await handleRoute();
+          } catch (err) {
+            toast(err.message || t('sync.status.error'));
+          } finally {
+            if (coursesSyncRef) {
+              labelEl.textContent = origLabel;
+              coursesSyncRef.disabled = false;
+            }
           }
-          if (window.SYNC) await window.SYNC.syncNow();
-          await handleRoute();
-        } catch (err) {
-          toast(err.message || t('sync.status.error'));
-        } finally {
-          syncBtn.textContent = orig;
-          syncBtn.disabled = false;
         }
       }
-    }, t('sessions.syncCta'));
-    root.appendChild(syncBtn);
-    root.appendChild(el('div', { class: 'spacer' }));
+    ]));
 
     if (!groups.length) {
       root.appendChild(emptyState(
@@ -2144,46 +2208,50 @@
     const groupName = (id) => (groups.find((g) => g.id === id) || {}).name || '';
     const attendance = await DB.all('attendance');
 
-    // Sync-from-Ubuntu-eLearning button (any authenticated user can trigger)
-    const syncBtn = el('button', {
-      class: 'btn btn--soft btn--block',
-      onClick: async () => {
-        if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-        const orig = syncBtn.textContent;
-        syncBtn.disabled = true;
-        syncBtn.textContent = t('sessions.syncing');
-        try {
-          const r = await window.API.moodleSync();
-          const s = (r && r.summary) || {};
-          if (s.skipped) {
-            toast(t('sessions.syncSkipped'));
-          } else if ((s.errors || []).length) {
-            console.warn('Sync errors:', s.errors);
-            toast(t('sessions.syncErrors', { n: s.errors.length }));
-          } else {
-            toast(t('sessions.syncResult', {
-              sNew: s.sessions_created || 0,
-              pNew: s.participants_created || 0
-            }));
+    // v0.3.7 — iOS Calls-style action circles under the search pill.
+    // Replaces the old soft sync button + "+ New session" link.
+    let syncBtnRef = null;
+    root.appendChild(actionCircles([
+      {
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { syncBtnRef = n; },
+        onClick: async () => {
+          if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
+          const labelEl = syncBtnRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          syncBtnRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
+          try {
+            const r = await window.API.moodleSync();
+            const s = (r && r.summary) || {};
+            if (s.skipped) {
+              toast(t('sessions.syncSkipped'));
+            } else if ((s.errors || []).length) {
+              console.warn('Sync errors:', s.errors);
+              toast(t('sessions.syncErrors', { n: s.errors.length }));
+            } else {
+              toast(t('sessions.syncResult', {
+                sNew: s.sessions_created || 0,
+                pNew: s.participants_created || 0
+              }));
+            }
+            if (window.SYNC) await window.SYNC.syncNow();
+            await handleRoute();
+          } catch (err) {
+            toast(err.message || t('sync.status.error'));
+          } finally {
+            if (syncBtnRef) {
+              labelEl.textContent = origLabel;
+              syncBtnRef.disabled = false;
+            }
           }
-          // Pull the new data down so it shows in the list immediately
-          if (window.SYNC) await window.SYNC.syncNow();
-          await handleRoute();
-        } catch (err) {
-          toast(err.message || t('sync.status.error'));
-        } finally {
-          syncBtn.textContent = orig;
-          syncBtn.disabled = false;
         }
-      }
-    }, t('sessions.syncCta'));
-    root.appendChild(syncBtn);
-    root.appendChild(el('div', { class: 'spacer' }));
-
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(sessions.length, 'sessions.countOne', 'sessions.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/sessions/new' }, t('sessions.new'))
+      },
+      { icon: ACTION_ICONS.plus, label: t('actions.newSession'), href: '#/sessions/new' }
     ]));
+
+    root.appendChild(el('p', { class: 'muted' }, tn(sessions.length, 'sessions.countOne', 'sessions.countOther')));
 
     if (!sessions.length) {
       root.appendChild(emptyState(t('sessions.emptyTitle'), t('sessions.emptyBody'), '#/sessions/new', t('sessions.emptyCta')));
@@ -2462,6 +2530,16 @@
       participants.forEach((p) => attendanceList.appendChild(makeAttendanceRow(p)));
     }
     root.appendChild(attendanceList);
+    // Search bar over the attendance rows — scoped to .att-row so the
+    // walk-in picker below stays unfiltered. Skip on empty rosters.
+    if (participants.length) {
+      attachListSearch(attendanceList, {
+        key: 'pwa.session.' + session.id + '.attendance',
+        placeholder: t('common.searchPh'),
+        itemSelector: '.att-row',
+        position: 'beforeItems',
+      });
+    }
 
     // ---------- Walk-in attendance (picker-first) ----------
     // v0.3.5a — Trainers and admins both see a searchable picker of users in
@@ -2703,10 +2781,10 @@
     const stories = (await DB.all('stories'))
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(stories.length, 'stories.countOne', 'stories.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/stories/new' }, t('stories.new'))
+    root.appendChild(actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newStory'), href: '#/stories/new' }
     ]));
+    root.appendChild(el('p', { class: 'muted' }, tn(stories.length, 'stories.countOne', 'stories.countOther')));
 
     if (!stories.length) {
       root.appendChild(emptyState(t('stories.emptyTitle'), t('stories.emptyBody'), '#/stories/new', t('stories.emptyCta')));

@@ -854,6 +854,56 @@ p { margin: 6px 0; }
 .list-search-pill:focus-within {
   background: #E2E2E5;
 }
+
+/* ---------- action circles (iOS Calls-style row under search) ---------- */
+.action-circles {
+  display: flex;
+  gap: 18px;
+  padding: 6px 2px 16px;
+  margin: 0 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.action-circles::-webkit-scrollbar { display: none; }
+.action-circle {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  width: 64px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+}
+.action-circle__icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: #ECECEE;
+  color: var(--brand);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s;
+}
+.action-circle__icon svg { width: 22px; height: 22px; }
+.action-circle:hover .action-circle__icon { background: var(--brand-tint); }
+.action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
+.action-circle[disabled] { opacity: .5; pointer-events: none; }
+.action-circle__label {
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 76px;
+}
 .checkbox {
   display: flex; align-items: center; gap: 8px;
 }
