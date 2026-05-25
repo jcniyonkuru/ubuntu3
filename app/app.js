@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.5';
+  const APP_VERSION = '0.3.8-dev.6';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2483,25 +2483,78 @@
       toast(t('session.photoDeleted'));
       if (window.SYNC) window.SYNC.syncNow().catch(() => {});
     }
+    // v0.3.8 — Crop position is stored on session.photoPosition as the
+    // CSS object-position string ("X% Y%"). Default is centered. Drag
+    // the image inside the banner to choose which part is visible;
+    // the new value is persisted on pointer up.
+    function parsePos(str) {
+      const m = String(str || '').match(/(-?\d+(?:\.\d+)?)%\s+(-?\d+(?:\.\d+)?)%/);
+      return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : { x: 50, y: 50 };
+    }
     function renderPhotoBanner() {
       photoBanner.innerHTML = '';
-      if (session.photo) {
-        const img = el('img', { alt: '' });
-        img.src = URL.createObjectURL(session.photo);
-        img.onload = () => URL.revokeObjectURL(img.src);
-        photoBanner.appendChild(img);
-        photoBanner.appendChild(el('button', {
-          type: 'button',
-          class: 'session-photo-banner__delete',
-          'aria-label': t('session.photoDelete'),
-          title: t('session.photoDelete'),
-          html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
-          onClick: deletePhoto
-        }));
-        photoBanner.hidden = false;
-      } else {
-        photoBanner.hidden = true;
+      if (!session.photo) { photoBanner.hidden = true; return; }
+      const pos = parsePos(session.photoPosition);
+      let posX = pos.x, posY = pos.y;
+
+      const img = el('img', { alt: '' });
+      img.style.objectPosition = posX + '% ' + posY + '%';
+      img.src = URL.createObjectURL(session.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+
+      // Drag-to-reposition. Uses pointer events so one path covers
+      // mouse + touch + pen. We anchor on the values at pointerdown,
+      // then translate finger delta into a percentage of the banner
+      // box so movement feels natural regardless of phone width.
+      let dragging = false;
+      let startX = 0, startY = 0, startPosX = 50, startPosY = 50;
+      img.addEventListener('pointerdown', (e) => {
+        // Ignore the right-mouse / middle button so this stays a
+        // primary-tap gesture.
+        if (e.button !== undefined && e.button !== 0) return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPosX = posX; startPosY = posY;
+        try { img.setPointerCapture(e.pointerId); } catch (err) {}
+        img.classList.add('is-dragging');
+        e.preventDefault();
+      });
+      img.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const rect = photoBanner.getBoundingClientRect();
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        // Drag the image rightward (dx>0) → reveal more of the LEFT
+        // side of the photo → object-position X decreases.
+        posX = Math.max(0, Math.min(100, startPosX - (dx / rect.width)  * 100));
+        posY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
+        img.style.objectPosition = posX + '% ' + posY + '%';
+      });
+      async function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        try { img.releasePointerCapture(e.pointerId); } catch (err) {}
+        img.classList.remove('is-dragging');
+        // Persist the final crop. No-op if it matches what was already stored.
+        const next = posX.toFixed(1) + '% ' + posY.toFixed(1) + '%';
+        if (next !== (session.photoPosition || '50.0% 50.0%')) {
+          session.photoPosition = next;
+          await DB.put('sessions', session, CURRENT_AUTHOR.id);
+        }
       }
+      img.addEventListener('pointerup', endDrag);
+      img.addEventListener('pointercancel', endDrag);
+
+      photoBanner.appendChild(img);
+      photoBanner.appendChild(el('button', {
+        type: 'button',
+        class: 'session-photo-banner__delete',
+        'aria-label': t('session.photoDelete'),
+        title: t('session.photoDelete'),
+        html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        onClick: deletePhoto
+      }));
+      photoBanner.hidden = false;
     }
     renderPhotoBanner();
     root.appendChild(photoBanner);
