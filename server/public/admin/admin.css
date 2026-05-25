@@ -189,6 +189,15 @@ h3 { font-size: 15px; margin: 8px 0 4px; }
 .card__head h2 { margin: 0; }
 
 .table-wrap { overflow-x: auto; }
+/* v0.3.7 — search bar above large tables */
+.table-search input[type="search"]:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(174, 27, 27, 0.12);
+}
+@media print {
+  .table-search { display: none; }
+}
 table.data {
   width: 100%;
   border-collapse: collapse;
@@ -200,7 +209,10 @@ table.data th, table.data td {
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
-table.data th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+table.data th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; user-select: none; }
+table.data th:hover { color: var(--text); }
+table.data th.sorted { color: var(--brand); }
+table.data th .sort-indicator { font-size: 10px; opacity: .65; }
 table.data tr:hover td { background: #FAFAFB; }
 table.data td .pill { font-size: 11px; }
 .pill {

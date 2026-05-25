@@ -104,6 +104,9 @@ $routes = [
     ['POST',   '#^/admin/moodle/news$#',                [MoodleSync::class, 'news']],
     // v0.3.1b — unattended cron trigger (shared-secret header)
     ['POST',   '#^/admin/moodle/sync-cron$#',           [MoodleSync::class, 'cronEndpoint']],
+    // v0.3.7 — course banner image fetched from Moodle during sync,
+    // served from our own storage to avoid leaking the WS token.
+    ['GET',    '#^/courses/([a-f0-9-]{36})/image$#',    fn($id) => MoodleSync::serveCourseImage($id)],
 
     // v0.3.2 — donor reports (admin only)
     ['POST',   '#^/admin/reports/donor$#',              [Reports::class, 'donor']],

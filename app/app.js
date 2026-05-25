@@ -11,6 +11,12 @@
   //  Constants
   // ============================================================
 
+  // Visible app version. Bump this and the CACHE constant in
+  // service-worker.js together when cutting a release. Exposed on window
+  // so DevTools and tests can read it without parsing source.
+  const APP_VERSION = '0.3.7';
+  window.UBUNTU3_VERSION = APP_VERSION;
+
   const SEX_OPTIONS = ['F', 'M', 'NB'];
   const AGE_RANGES = ['<18', '18-25', '26-35', '36-45', '46-60', '>60'];
 
@@ -81,6 +87,119 @@
     return t('sex.nb');
   }
 
+  // ---------- list-row thumbnails ----------
+  // SVG glyphs mirror the bottom tab bar so every list row carries the
+  // same visual cue as the tab it belongs to. Story rows prefer the
+  // attached photo (or first inline rich-text image) and only fall back
+  // to the Stories icon when nothing is embedded.
+  const THUMB_ICONS = {
+    cohorts:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zM8 11c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>',
+    groups:       '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
+    sessions:     '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5C3.9 4 3 4.9 3 6v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM7 12h5v5H7z"/></svg>',
+    stories:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
+    participants: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+    audio:        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>',
+    attendance:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>',
+    reports:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 9.2h3V19H5V9.2zm5.6-5h2.8V19h-2.8V4.2zM16.2 13H19V19h-2.8v-6z"/></svg>',
+    warning:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
+    publish:      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9zm-9-7c-3.87 0-7 3.13-7 7 0 2.18.97 4.12 2.5 5.42V12h2v4.83A6.97 6.97 0 0 0 12 19c.86 0 1.68-.16 2.43-.45L10 14.59V11h2v2.59L17.5 19A6.96 6.96 0 0 0 19 12c0-3.87-3.13-7-7-7z"/></svg>'
+  };
+  function thumbIcon(kind) {
+    return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
+  }
+  // Course thumbnail: when the server-side Moodle sync has populated an
+  // imageUrl, render it as an <img>; otherwise fall back to the Courses
+  // tab glyph. The img is wrapped in a .thumb container so it picks up
+  // the same 56x56 rounded frame used elsewhere.
+  function courseThumb(g) {
+    const url = g && g.imageUrl;
+    if (!url) return thumbIcon('groups');
+    // Prepend /api if Sync returned a bare /courses/... path so the
+    // browser hits the API base regardless of where the PWA is served.
+    const src = url.startsWith('http') ? url : (url.startsWith('/api') ? url : ('/api' + url));
+    const wrap = el('div', { class: 'thumb' });
+    const img = el('img', { alt: '', src });
+    // If the image fails (offline, deleted server-side, 404), gracefully
+    // swap in the generic icon so the row never shows a broken-image glyph.
+    img.addEventListener('error', () => {
+      wrap.classList.add('thumb--icon');
+      wrap.innerHTML = THUMB_ICONS.groups || '';
+    });
+    wrap.appendChild(img);
+    return wrap;
+  }
+  // iOS-Calls-style row of round action buttons. Each item:
+  //   { key, icon, label, href? | onClick? }
+  // Renders as a horizontal scroll strip — useful under the search pill
+  // on entity lists where the screen has a handful of one-tap actions
+  // (sync, create new, etc.) that we don't want hiding inside the more
+  // menu or floating action button.
+  const ACTION_ICONS = {
+    sync: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>',
+    walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
+    course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
+    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>'
+  };
+  function actionCircles(items) {
+    const row = el('div', { class: 'action-circles' });
+    (items || []).filter(Boolean).forEach((item) => {
+      const isLink = !!item.href;
+      const attrs = isLink
+        ? { class: 'action-circle', href: item.href }
+        : { class: 'action-circle', type: 'button', onClick: item.onClick };
+      if (item.disabled) attrs.disabled = true;
+      const node = el(isLink ? 'a' : 'button', attrs, [
+        el('span', { class: 'action-circle__icon', html: item.icon || '' }),
+        el('span', { class: 'action-circle__label' }, item.label || '')
+      ]);
+      // Hook so callers can mutate state (e.g. show "Syncing…" while a
+      // long action runs) without re-rendering the whole row.
+      if (item.ref) item.ref(node);
+      row.appendChild(node);
+    });
+    return row;
+  }
+
+  // Inline icon for a section heading (h3). Renders an SVG glyph next
+  // to the title text, matching the colour and stroke of the tab-bar
+  // icon for that entity type. `extra` lets callers tack an action
+  // button onto the right side (e.g. + New).
+  function sectionHeading(kind, text, extra) {
+    const h = el('h3', { class: 'section-h' }, [
+      el('span', { class: 'section-h__icon', html: THUMB_ICONS[kind] || '' }),
+      el('span', { class: 'section-h__text' }, text)
+    ]);
+    if (extra) {
+      return el('div', { class: 'row between section-h__row' }, [h, extra]);
+    }
+    return h;
+  }
+  // Build a thumbnail for a story row. Preference order:
+  //   1. attached photo Blob
+  //   2. first <img src="data:image/..."> embedded in the rich-text body
+  //   3. an audio glyph (when only audio is attached)
+  //   4. the generic Stories tab icon
+  function storyThumb(s) {
+    if (s.photo) {
+      const wrap = el('div', { class: 'thumb' });
+      const img  = el('img', { alt: '' });
+      img.src = URL.createObjectURL(s.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      wrap.appendChild(img);
+      return wrap;
+    }
+    const html = s.text || '';
+    const m = html.match(/<img\s+[^>]*src=["'](data:image\/[^"']+)["'][^>]*>/i);
+    if (m) {
+      const wrap = el('div', { class: 'thumb' });
+      wrap.appendChild(el('img', { alt: '', src: m[1] }));
+      return wrap;
+    }
+    if (s.audio) return thumbIcon('audio');
+    return thumbIcon('stories');
+  }
+
   // ============================================================
   //  Author / device profile + language
   // ============================================================
@@ -135,15 +254,20 @@
     }
     const tabs = {
       dashboard: t('tab.dashboard'),
-      cohorts: t('tab.cohorts'),
-      sessions: t('tab.sessions'),
-      stories: t('tab.stories'),
-      more: t('tab.more')
+      cohorts:   t('tab.cohorts'),
+      sessions:  t('tab.sessions'),
+      stories:   t('tab.stories'),
+      // v0.3.7 — without this entry the Courses tab fell back to its
+      // hard-coded HTML text ("Cours") in every language.
+      groups:    t('tab.courses'),
+      reports:   t('tab.reports'),
+      more:      t('tab.more')
     };
     $$('.tab').forEach((tab) => {
       const span = tab.querySelector('span');
       if (span && tabs[tab.dataset.tab]) span.textContent = tabs[tab.dataset.tab];
     });
+    applyTabVisibility();
 
     // Language switcher button + menu state
     const lang = window.I18N.getLang();
@@ -173,18 +297,10 @@
       bb.setAttribute('title',      t('news.title'));
     }
 
-    // Settings (gear) button — header icon only, label travels in title/aria.
-    const stB = $('#settings-btn');
-    if (stB) {
-      stB.setAttribute('aria-label', t('settings.title'));
-      stB.setAttribute('title',      t('settings.title'));
-      // Wire once. Re-applying applyStaticLabels (e.g. on language change)
-      // shouldn't stack listeners on the same button.
-      if (!stB.dataset.wired) {
-        stB.addEventListener('click', () => openSettingsPopup());
-        stB.dataset.wired = '1';
-      }
-    }
+    // v0.3.7 — settings moved out of the header into the More tab to
+    // free up header real estate. The gear-button wireup that used to
+    // live here was removed; openSettingsPopup() is reached from the
+    // Settings card inside moreView() instead.
   }
 
   function setSyncState(state) {
@@ -248,7 +364,12 @@
     const btn = $('#bell-btn'); const dot = $('#bell-dot');
     if (!btn) return;
     btn.dataset.count = String(n || 0);
-    if (dot) dot.hidden = !n;
+    if (dot) {
+      // Cap displayed count so the badge stays compact. Above 99 we
+      // show '99+' — the popup still lists the full breakdown.
+      dot.textContent = n > 99 ? '99+' : (n ? String(n) : '');
+      dot.hidden = !n;
+    }
   }
   async function pollMoodleNews() {
     if (!window.API || !window.API.isAuthenticated() || !navigator.onLine) return;
@@ -607,7 +728,7 @@
       el('p', { class: 'muted' }, t('auth.loginIntro')),
       errBox,
       fg(t('auth.email'), el('input', { name: 'email', type: 'text', required: true, autocomplete: 'username' })),
-      fg(t('auth.password'), el('input', { name: 'password', type: 'password', required: true, autocomplete: 'current-password' })),
+      fg(t('auth.password'), passwordInput({ name: 'password', required: true, autocomplete: 'current-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.loginCta')),
       el('p', { class: 'small muted', style: 'text-align:center; margin:10px 0 0' }, t('auth.elearningHint')),
       el('div', { class: 'row', style: 'justify-content:center; margin-top:8px' },
@@ -760,8 +881,8 @@
       el('h2', null, t('auth.resetTitle')),
       el('p', { class: 'muted small' }, t('auth.resetIntro')),
       errBox, successBox,
-      fg(t('auth.newPw'), el('input', { name: 'next', type: 'password', required: true, autocomplete: 'new-password' })),
-      fg(t('auth.newPwConfirm'), el('input', { name: 'confirm', type: 'password', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPw'), passwordInput({ name: 'next', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPwConfirm'), passwordInput({ name: 'confirm', required: true, autocomplete: 'new-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.resetCta'))
     ]);
     renderAuthOverlay(root, [form]);
@@ -800,9 +921,9 @@
       el('h2', null, t('auth.changePwTitle')),
       el('p', { class: 'muted small' }, t('auth.changePwIntro')),
       errBox,
-      fg(t('auth.currentPw'), el('input', { name: 'current', type: 'password', required: true, autocomplete: 'current-password' })),
-      fg(t('auth.newPw'), el('input', { name: 'next', type: 'password', required: true, autocomplete: 'new-password' })),
-      fg(t('auth.newPwConfirm'), el('input', { name: 'confirm', type: 'password', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.currentPw'), passwordInput({ name: 'current', required: true, autocomplete: 'current-password' })),
+      fg(t('auth.newPw'), passwordInput({ name: 'next', required: true, autocomplete: 'new-password' })),
+      fg(t('auth.newPwConfirm'), passwordInput({ name: 'confirm', required: true, autocomplete: 'new-password' })),
       el('button', { class: 'btn btn--block', type: 'submit' }, t('auth.changePwCta'))
     ]);
     root.appendChild(form);
@@ -885,11 +1006,25 @@
     const activeGroupsRate = groups.length ? Math.round((activeGroupsCount * 100) / groups.length) : 0;
 
     // The Settings gear lives in the global app header now — see the
-    // #settings-btn anchor in index.html. The dashboard just shows the
+    // Settings button now lives in the More tab. The dashboard just shows the
     // greeting, then reads the user's preferences for what to render.
     const settings = SETTINGS.read();
     const dashCfg  = SETTINGS.dashCfg(settings);
-    root.appendChild(el('p', { class: 'muted small' }, t('dash.hello', { name: CURRENT_AUTHOR.name || '' })));
+    // Greeting with the trainer's name in bold. We split the translated
+    // sentence around the {name} placeholder so the surrounding wording
+    // stays in the FR/EN/RN translation files. The marker () is a
+    // private control char that never appears in real translations.
+    (() => {
+      const raw = t('dash.hello', { name: '' });
+      const i = raw.indexOf('');
+      const before = i >= 0 ? raw.slice(0, i) : raw;
+      const after  = i >= 0 ? raw.slice(i + 1) : '';
+      root.appendChild(el('p', { class: 'dash-hello' }, [
+        document.createTextNode(before),
+        el('strong', null, CURRENT_AUTHOR.name || ''),
+        document.createTextNode(after)
+      ]));
+    })();
 
     // "Pick up where you left off": last session, last story, last course —
     // in that order, left-to-right. Always rendered, even before any of the
@@ -934,7 +1069,10 @@
 
     // 2) Last story
     {
-      const snippet = lastStory ? ((lastStory.text || '').trim().slice(0, 64) + ((lastStory.text || '').length > 64 ? '…' : '')) : null;
+      // Story text is HTML in v0.3.7+. Strip tags before truncating for the
+      // resume tile so the trainer sees a clean preview.
+      const lastStoryPlain = lastStory ? stripHtml(lastStory.text || '') : '';
+      const snippet = lastStory ? (lastStoryPlain.slice(0, 64) + (lastStoryPlain.length > 64 ? '…' : '')) : null;
       resumeRow.appendChild(resumeTile(
         'dash.resumeStory',
         lastStory ? '#/stories/' + lastStory.id + '/edit' : null,
@@ -978,9 +1116,9 @@
     }
 
     // Information tiles — render only those the user has enabled in
-    // Settings, in the configured order. Participants is intentionally
-    // absent here — that count only makes sense in a course's context, not
-    // as a global headline.
+    // Settings, in the configured order. The participants count honours
+    // the 'my courses only' filter via the earlier participants array
+    // (already scoped to facilitated courses when the flag is on).
     const tileBuilders = {
       sessionsMonth: () => linkTile(
         t('dash.tile.sessionsMonth'),
@@ -994,7 +1132,13 @@
         t('dash.storiesSub', { n: storiesConsent }),
         '#/stories'
       ),
-      groups: () => linkTile(t('dash.tile.groups'),  groups.length,  null, '#/groups'),
+      groups: () => linkTile(t('dash.tile.groups'), groups.length, null, '#/groups'),
+      participants: () => linkTile(
+        t('dash.tile.participants'),
+        totalP,
+        totalP ? t('dash.sexSub', { f: pct(sexCounts.F || 0), m: pct(sexCounts.M || 0) }) : null,
+        '#/participants'
+      ),
       cohorts: () => linkTile(t('dash.tile.cohorts'), cohorts.length, null, '#/cohorts'),
     };
     const visibleTileKeys = (dashCfg.tiles || []).filter((k) => tileBuilders[k]);
@@ -1063,10 +1207,10 @@
     // v0.3.5c — cohort/course counts exclude session-scoped walk-ins
     const participants = (await DB.all('participants')).filter((p) => !p.walkInSessionId);
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(cohorts.length, 'cohorts.countOne', 'cohorts.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/cohorts/new' }, t('cohorts.new'))
+    root.appendChild(actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newCohort'), href: '#/cohorts/new' }
     ]));
+    root.appendChild(el('p', { class: 'muted' }, tn(cohorts.length, 'cohorts.countOne', 'cohorts.countOther')));
 
     if (!cohorts.length) {
       root.appendChild(emptyState(t('cohorts.emptyTitle'), t('cohorts.emptyBody'), '#/cohorts/new', t('cohorts.emptyCta')));
@@ -1082,12 +1226,16 @@
         t('cohorts.sub', { g: cohortGroups.length, p: cohortPCount })
       ].filter(Boolean).join(' · ');
       root.appendChild(el('a', { class: 'card-link', href: `#/cohorts/${c.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, c.name || t('common.noName')),
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          thumbIcon('cohorts'),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, c.name || t('common.noName')),
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.cohorts' });
   }
 
   // ---------- Cohort form ----------
@@ -1137,51 +1285,77 @@
     const groups = (await DB.byIndex('groups', 'cohortId', cohort.id))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, cohort.name || t('common.noName')),
-          el('div', { class: 'card__sub' }, [
-            cohort.region || t('cohort.unknownRegion'),
-            cohort.startDate ? ' · ' + formatDate(cohort.startDate) : '',
-            cohort.endDate ? ' → ' + formatDate(cohort.endDate) : ''
-          ].join(''))
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          thumbIcon('cohorts'),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, cohort.name || t('common.noName')),
+            el('div', { class: 'card__sub' }, [
+              cohort.region || t('cohort.unknownRegion'),
+              cohort.startDate ? ' · ' + formatDate(cohort.startDate) : '',
+              cohort.endDate ? ' → ' + formatDate(cohort.endDate) : ''
+            ].join(''))
+          ])
         ]),
         el('a', { class: 'btn btn--sm btn--ghost', href: `#/cohorts/${cohort.id}/edit` }, t('common.edit'))
       ])
     ]));
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('h3', null, t('cohort.groupsHeading', { n: groups.length })),
-      el('a', { class: 'btn btn--sm', href: `#/cohorts/${cohort.id}/groups/new` }, t('cohort.newGroup'))
-    ]));
+    root.appendChild(sectionHeading('groups', t('cohort.groupsHeading', { n: groups.length })));
+    // Action circle for + Course. Slotted under the search bar when
+    // the cohort has at least one course; otherwise sits right under
+    // the heading so trainers can still create the first one.
+    const cohortActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newCourse'),
+        href: `#/cohorts/${cohort.id}/groups/new` }
+    ]);
 
     if (!groups.length) {
-      root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody'), `#/cohorts/${cohort.id}/groups/new`, t('cohort.noGroupsCta')));
+      root.appendChild(cohortActions);
+      root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody')));
       return;
     }
     // v0.3.5c — cohort detail shows enrolled participants, not walk-ins
     const participants = (await DB.all('participants')).filter((p) => !p.walkInSessionId);
+    // Wrap courses in a section so the search bar can scope to its
+    // children only (not the cohort header card above).
+    const coursesSection = el('div', { class: 'cohort-courses' });
     groups.forEach((g) => {
       const pCount = participants.filter((p) => p.groupId === g.id).length;
-      root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          el('div', { class: 'card__title' }, g.name || t('common.noName')),
-          el('div', { class: 'card__sub' },
-            // v0.3.5i — facilitator can be a list now; the legacy .facilitator
-            // text always mirrors the joined names of facilitatorIds, so it's
-            // safe to display directly. Plural label kicks in when there's a
-            // comma in the joined string (cheap heuristic).
-            (g.facilitator
-              ? (g.facilitator.indexOf(',') >= 0
-                  ? t('cohort.facilitatedByMany', { names: g.facilitator })
-                  : t('cohort.facilitatedBy',     { name:  g.facilitator }))
-              : t('cohort.noFacilitator')) +
-            ' · ' + t('cohort.participants', { n: pCount })
-          )
+      coursesSection.appendChild(el('a', { class: 'card-link cohort-course', href: `#/groups/${g.id}` }, [
+        el('div', { class: 'card card--row' }, [
+          courseThumb(g),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, g.name || t('common.noName')),
+            el('div', { class: 'card__sub' },
+              // v0.3.5i — facilitator can be a list now; the legacy .facilitator
+              // text always mirrors the joined names of facilitatorIds, so it's
+              // safe to display directly. Plural label kicks in when there's a
+              // comma in the joined string (cheap heuristic).
+              (g.facilitator
+                ? (g.facilitator.indexOf(',') >= 0
+                    ? t('cohort.facilitatedByMany', { names: g.facilitator })
+                    : t('cohort.facilitatedBy',     { name:  g.facilitator }))
+                : t('cohort.noFacilitator')) +
+              ' · ' + t('cohort.participants', { n: pCount })
+            )
+          ])
         ])
       ]));
     });
+    root.appendChild(coursesSection);
+    attachListSearch(coursesSection, {
+      key: 'pwa.cohort.' + cohort.id + '.courses',
+      placeholder: t('common.searchPh'),
+      itemSelector: '.cohort-course',
+      position: 'beforeItems',
+    });
+    // Slot the action circle row right after the search bar
+    // (heading → search → action → courses).
+    const cohortSearchBar = coursesSection.querySelector('.list-search');
+    if (cohortSearchBar) cohortSearchBar.after(cohortActions);
+    else coursesSection.appendChild(cohortActions);
   }
 
   // ---------- Group form ----------
@@ -1396,36 +1570,42 @@
     const sessions = (await DB.byIndex('sessions', 'groupId', group.id))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, [
-            document.createTextNode(group.name || t('common.noName')),
-            group.moodleCourseId
-              ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
-              : null
-          ]),
-          el('div', { class: 'card__sub' },
-            (cohort ? cohort.name : t('group.unknownCohort')) + (group.facilitator ? ' · ' + group.facilitator : '')
-          )
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          courseThumb(group),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, [
+              document.createTextNode(group.name || t('common.noName')),
+              group.moodleCourseId
+                ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+                : null
+            ]),
+            el('div', { class: 'card__sub' },
+              (cohort ? cohort.name : t('group.unknownCohort')) + (group.facilitator ? ' · ' + group.facilitator : '')
+            )
+          ])
         ]),
         el('a', { class: 'btn btn--sm btn--ghost', href: `#/groups/${group.id}/edit` }, t('common.edit'))
       ])
     ]));
 
-    // Sync-from-Ubuntu-eLearning button — pulls sessions + enrolments from
-    // Moodle for every linked course in one shot. Only surfaced when THIS
-    // course is linked to a Moodle course; otherwise the action has nothing
-    // to pull onto this page.
+    // Sync-from-Ubuntu-eLearning — only surfaced when THIS course is linked
+    // to a Moodle course; otherwise the action has nothing to pull. Rendered
+    // as an action circle so it matches the row layout used on the other
+    // list views.
     if (group.moodleCourseId) {
-      const syncBtn = el('button', {
-        class: 'btn btn--soft btn--block',
-        style: 'margin-top:10px',
+      let courseSyncRef = null;
+      root.appendChild(actionCircles([{
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { courseSyncRef = n; },
         onClick: async () => {
           if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-          const orig = syncBtn.textContent;
-          syncBtn.disabled = true;
-          syncBtn.textContent = t('sessions.syncing');
+          const labelEl = courseSyncRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          courseSyncRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
           try {
             const r = await window.API.moodleSync();
             const s = (r && r.summary) || {};
@@ -1445,20 +1625,28 @@
           } catch (err) {
             toast(err.message || t('sync.status.error'));
           } finally {
-            syncBtn.textContent = orig;
-            syncBtn.disabled = false;
+            if (courseSyncRef) {
+              labelEl.textContent = origLabel;
+              courseSyncRef.disabled = false;
+            }
           }
         }
-      }, t('sessions.syncCta'));
-      root.appendChild(syncBtn);
+      }]));
     }
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('h3', null, t('group.participantsHeading', { n: participants.length })),
-      el('a', { class: 'btn btn--sm', href: `#/groups/${group.id}/participants/new` }, t('group.newParticipant'))
-    ]));
+    // Participants live in their own section so we can scope a search bar
+    // to them only — the sessions block below stays unfiltered.
+    const partsSection = el('div', { class: 'course-participants' });
+    partsSection.appendChild(sectionHeading('participants', t('group.participantsHeading', { n: participants.length })));
+    // Action-circle row for + Participant. Slotted under the search bar
+    // for populated lists (see the placement step after attachListSearch),
+    // or directly under the heading for empty lists.
+    const partsActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newParticipant'), href: `#/groups/${group.id}/participants/new` }
+    ]);
     if (!participants.length) {
-      root.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody'), `#/groups/${group.id}/participants/new`, t('group.noParticipantsCta')));
+      partsSection.appendChild(partsActions);
+      partsSection.appendChild(emptyState(t('group.noParticipantsTitle'), t('group.noParticipantsBody')));
     } else {
       // Active rows first, then dropped (with a pill and faded look)
       const sorted = participants.slice().sort((a, b) => {
@@ -1469,18 +1657,25 @@
       sorted.forEach((p) => {
         const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
         const isDropped = p.status === 'dropped';
+        // Moodle pill — flag enrolees that came from Ubuntu eLearning so
+        // the trainer doesn't accidentally edit/delete a synced record.
+        // Mirrors the pill shown on courses and sessions.
         const titleNode = el('div', { class: 'list-item__title' }, [
           document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+          p.source === 'moodle'
+            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+            : null,
           isDropped ? el('span', {
             class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
         ]);
-        root.appendChild(el('a', {
-          class: 'card-link',
+        partsSection.appendChild(el('a', {
+          class: 'card-link course-participant',
           href: `#/participants/${p.id}/edit`,
           style: isDropped ? 'opacity:.62' : ''
         }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('participants'),
             el('div', { class: 'grow' }, [
               titleNode,
               el('div', { class: 'list-item__sub' }, sub)
@@ -1488,18 +1683,44 @@
           ])
         ]));
       });
+      // Search bar scoped to participant cards only (not the sessions list
+      // below). Placement: beforeItems so the heading stays above the
+      // search; the search slots between heading and the first card.
+      attachListSearch(partsSection, {
+        key: 'pwa.course.' + group.id + '.participants',
+        placeholder: t('group.searchParticipantsPh') || t('common.searchPh'),
+        itemSelector: '.course-participant',
+        position: 'beforeItems',
+      });
+      // Slot the action-circle row right after the search bar
+      // (heading → search → action → items).
+      const partsSearchBar = partsSection.querySelector('.list-search');
+      if (partsSearchBar) partsSearchBar.after(partsActions);
+      else partsSection.appendChild(partsActions);
     }
+    root.appendChild(partsSection);
 
-    root.appendChild(el('div', { class: 'row between', style: 'margin-top:16px' }, [
-      el('h3', null, t('group.sessionsHeading', { n: sessions.length })),
-      el('a', { class: 'btn btn--sm btn--ghost', href: `#/sessions/new?groupId=${group.id}` }, t('group.newSession'))
-    ]));
+    // Sessions block — wrapped in its own section so the search bar can
+    // scope to .course-session cards only (not the participants above).
+    // Removed the previous slice(0, 5) cap so search can reach every
+    // session — when the trainer types something, they expect the filter
+    // to match the entire course history, not just the most recent 5.
+    const sessSection = el('div', { class: 'course-sessions', style: 'margin-top:16px' });
+    sessSection.appendChild(sectionHeading('sessions', t('group.sessionsHeading', { n: sessions.length })));
+    // Same pattern as participants: a + Session action circle that sits
+    // under the search bar when there are sessions, or directly under
+    // the heading when the list is empty.
+    const sessActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newSession'), href: `#/sessions/new?groupId=${group.id}` }
+    ]);
     if (!sessions.length) {
-      root.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
+      sessSection.appendChild(sessActions);
+      sessSection.appendChild(el('p', { class: 'muted small' }, t('group.noSessions')));
     } else {
-      sessions.slice(0, 5).forEach((s) => {
-        root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
+      sessions.forEach((s) => {
+        sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
               el('div', { class: 'list-item__sub' }, formatDate(s.date))
@@ -1507,7 +1728,17 @@
           ])
         ]));
       });
+      attachListSearch(sessSection, {
+        key: 'pwa.course.' + group.id + '.sessions',
+        placeholder: t('group.searchSessionsPh') || t('common.searchPh'),
+        itemSelector: '.course-session',
+        position: 'beforeItems',
+      });
+      const sessSearchBar = sessSection.querySelector('.list-search');
+      if (sessSearchBar) sessSearchBar.after(sessActions);
+      else sessSection.appendChild(sessActions);
     }
+    root.appendChild(sessSection);
   }
 
   // ---------- All Groups (flat list across cohorts) ----------
@@ -1517,40 +1748,46 @@
     const groups = applyMyCourses(await DB.all('groups'))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    // Sync-from-Ubuntu-eLearning button — same workflow as on Sessions
-    const syncBtn = el('button', {
-      class: 'btn btn--soft btn--block',
-      onClick: async () => {
-        if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-        const orig = syncBtn.textContent;
-        syncBtn.disabled = true;
-        syncBtn.textContent = t('sessions.syncing');
-        try {
-          const r = await window.API.moodleSync();
-          const s = (r && r.summary) || {};
-          if (s.skipped) {
-            toast(t('sessions.syncSkipped'));
-          } else if ((s.errors || []).length) {
-            console.warn('Sync errors:', s.errors);
-            toast(t('sessions.syncErrors', { n: s.errors.length }));
-          } else {
-            toast(t('sessions.syncResult', {
-              sNew: s.sessions_created || 0,
-              pNew: s.participants_created || 0
-            }));
+    // v0.3.7 — action-circle for Moodle sync (replaces the block button).
+    let coursesSyncRef = null;
+    root.appendChild(actionCircles([
+      {
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { coursesSyncRef = n; },
+        onClick: async () => {
+          if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
+          const labelEl = coursesSyncRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          coursesSyncRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
+          try {
+            const r = await window.API.moodleSync();
+            const s = (r && r.summary) || {};
+            if (s.skipped) {
+              toast(t('sessions.syncSkipped'));
+            } else if ((s.errors || []).length) {
+              console.warn('Sync errors:', s.errors);
+              toast(t('sessions.syncErrors', { n: s.errors.length }));
+            } else {
+              toast(t('sessions.syncResult', {
+                sNew: s.sessions_created || 0,
+                pNew: s.participants_created || 0
+              }));
+            }
+            if (window.SYNC) await window.SYNC.syncNow();
+            await handleRoute();
+          } catch (err) {
+            toast(err.message || t('sync.status.error'));
+          } finally {
+            if (coursesSyncRef) {
+              labelEl.textContent = origLabel;
+              coursesSyncRef.disabled = false;
+            }
           }
-          if (window.SYNC) await window.SYNC.syncNow();
-          await handleRoute();
-        } catch (err) {
-          toast(err.message || t('sync.status.error'));
-        } finally {
-          syncBtn.textContent = orig;
-          syncBtn.disabled = false;
         }
       }
-    }, t('sessions.syncCta'));
-    root.appendChild(syncBtn);
-    root.appendChild(el('div', { class: 'spacer' }));
+    ]));
 
     if (!groups.length) {
       root.appendChild(emptyState(
@@ -1585,12 +1822,16 @@
           : null
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
-        el('div', { class: 'card' }, [
-          titleNode,
-          el('div', { class: 'card__sub' }, sub)
+        el('div', { class: 'card card--row' }, [
+          courseThumb(g),
+          el('div', { class: 'grow', style: 'min-width:0' }, [
+            titleNode,
+            el('div', { class: 'card__sub' }, sub)
+          ])
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.courses' });
   }
 
   // ---------- All Participants (flat list across groups) ----------
@@ -1638,6 +1879,7 @@
         style: isDropped ? 'opacity:.62' : ''
       }, [
         el('div', { class: 'list-item' }, [
+          thumbIcon('participants'),
           el('div', { class: 'grow' }, [
             titleNode,
             el('div', { class: 'list-item__sub' }, sub)
@@ -1645,20 +1887,21 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.participants' });
   }
 
   // ---------- Participant form ----------
   /**
    * v0.3.5 — Searchable user picker rendered when a trainer or admin taps
-   * "+ Participant" on a course. Trainers may only PICK; admins can also
-   * create a brand-new user (role='trainee', no invite email) inline.
+   * "+ Participant" on a course. v0.3.7 — both roles can now also create a
+   * brand-new trainee inline (no invite email). Email is the unicity key:
+   * if a user with that email already exists, the server reuses them and
+   * back-fills any missing demographics rather than creating a duplicate.
    *
    * Tapping a user creates a participant row in IndexedDB pointing at the
    * picked user.id, then navigates back to the course.
    */
   async function renderUserPicker(root, group) {
-    const isAdmin = (CURRENT_AUTHOR && CURRENT_AUTHOR.role === 'admin');
-
     if (!navigator.onLine) {
       root.appendChild(el('div', { class: 'card' }, [
         el('h3', { style: 'margin-top:0' }, t('picker.offlineTitle')),
@@ -1764,71 +2007,78 @@
     });
     setTimeout(() => search.focus(), 0);
 
-    // Admin-only: "Create a brand-new user (no invite)" expander
-    if (isAdmin) {
-      const createBtn = el('button', {
-        class: 'btn btn--ghost btn--block', type: 'button',
-        style: 'margin-top:16px'
-      }, t('picker.createNewCta'));
-      const createForm = el('form', {
-        class: 'card', style: 'margin-top:8px', hidden: true,
-        onSubmit: async (e) => {
-          e.preventDefault();
-          const firstName = createForm.elements['firstName'].value.trim();
-          const lastName  = createForm.elements['lastName'].value.trim();
-          const email     = createForm.elements['email'].value.trim();
-          const phone     = createForm.elements['phone'].value.trim();
-          const sex       = createForm.elements['sex'].value;
-          const ageRange  = createForm.elements['ageRange'].value;
-          if (!firstName || !lastName) return;
-          const submit = createForm.querySelector('button[type=submit]');
-          submit.disabled = true;
-          try {
-            const r = await window.API.createUser({
-              firstName, lastName, email, phone, sex, ageRange,
-              role: 'trainee', sendInvite: false,
-            });
-            // Now enrol them as a participant in this course
-            await pickUser({
-              id: r.user.id,
-              firstName: r.user.firstName,
-              lastName:  r.user.lastName,
-              email:     r.user.email,
-              syntheticEmail: !email,
-            });
-          } catch (err) {
-            toast(err.message || t('common.error'));
-            submit.disabled = false;
-          }
+    // v0.3.7 — "Create a brand-new person" expander, available to trainers
+    // and admins alike. Email + sex + age are required so the participant
+    // row is usable for reporting, and email is the unicity key the server
+    // uses to dedupe against existing users.
+    const createBtn = el('button', {
+      class: 'btn btn--ghost btn--block', type: 'button',
+      style: 'margin-top:16px'
+    }, t('picker.createNewCta'));
+    const createForm = el('form', {
+      class: 'card', style: 'margin-top:8px', hidden: true,
+      onSubmit: async (e) => {
+        e.preventDefault();
+        const firstName = createForm.elements['firstName'].value.trim();
+        const lastName  = createForm.elements['lastName'].value.trim();
+        const email     = createForm.elements['email'].value.trim().toLowerCase();
+        const phone     = createForm.elements['phone'].value.trim();
+        const sex       = createForm.elements['sex'].value;
+        const ageRange  = createForm.elements['ageRange'].value;
+        if (!firstName || !lastName) return;
+        // Defensive: required is set on the inputs, but double-check here in
+        // case the browser strips the constraint (older WebViews).
+        if (!email || !sex || !ageRange) {
+          toast(t('picker.createNewMissing'));
+          return;
         }
-      }, [
-        el('h3', { style: 'margin-top:0' }, t('picker.createNewTitle')),
-        el('p', { class: 'small muted', style: 'margin-top:0' }, t('picker.createNewIntro')),
-        el('div', { class: 'row', style: 'gap:12px' }, [
-          el('div', { class: 'grow' }, fg(t('common.firstName'), el('input', { name: 'firstName', type: 'text', required: true, autocomplete: 'given-name' }))),
-          el('div', { class: 'grow' }, fg(t('common.lastName'),  el('input', { name: 'lastName',  type: 'text', required: true, autocomplete: 'family-name' })))
-        ]),
-        fg(t('common.email'), el('input', { name: 'email', type: 'email', autocomplete: 'email', placeholder: t('common.emailPh') })),
-        fg(t('common.phone'), el('input', { name: 'phone', type: 'tel',   autocomplete: 'tel',   placeholder: '+257…' })),
-        el('div', { class: 'row', style: 'gap:12px' }, [
-          el('div', { class: 'grow' }, fg(t('common.sex'), selectEl('sex', [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))), ''))),
-          el('div', { class: 'grow' }, fg(t('common.ageRange'), selectEl('ageRange', [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))), '')))
-        ]),
-        el('div', { class: 'row', style: 'gap:8px' }, [
-          el('button', { class: 'btn', type: 'submit' }, t('picker.createNewSave')),
-          el('button', {
-            class: 'btn btn--ghost btn--sm', type: 'button',
-            onClick: () => { createForm.reset(); createForm.hidden = true; createBtn.hidden = false; }
-          }, t('common.cancel') || 'Cancel')
-        ])
-      ]);
-      createBtn.addEventListener('click', () => {
-        createForm.hidden = false; createBtn.hidden = true;
-        const fn = createForm.elements['firstName']; if (fn) fn.focus();
-      });
-      root.appendChild(createBtn);
-      root.appendChild(createForm);
-    }
+        const submit = createForm.querySelector('button[type=submit]');
+        submit.disabled = true;
+        try {
+          const r = await window.API.createUser({
+            firstName, lastName, email, phone, sex, ageRange,
+            role: 'trainee', sendInvite: false,
+          });
+          // Now enrol them as a participant in this course
+          await pickUser({
+            id: r.user.id,
+            firstName: r.user.firstName,
+            lastName:  r.user.lastName,
+            email:     r.user.email,
+            syntheticEmail: false,
+          });
+        } catch (err) {
+          toast(err.message || t('common.error'));
+          submit.disabled = false;
+        }
+      }
+    }, [
+      el('h3', { style: 'margin-top:0' }, t('picker.createNewTitle')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('picker.createNewIntro')),
+      el('div', { class: 'row', style: 'gap:12px' }, [
+        el('div', { class: 'grow' }, fg(t('common.firstName'), el('input', { name: 'firstName', type: 'text', required: true, autocomplete: 'given-name' }))),
+        el('div', { class: 'grow' }, fg(t('common.lastName'),  el('input', { name: 'lastName',  type: 'text', required: true, autocomplete: 'family-name' })))
+      ]),
+      fg(t('common.email'), el('input', { name: 'email', type: 'email', required: true, autocomplete: 'email', placeholder: t('common.emailPh') })),
+      fg(t('common.phone'), el('input', { name: 'phone', type: 'tel',   autocomplete: 'tel',   placeholder: '+257…' })),
+      el('div', { class: 'row', style: 'gap:12px' }, [
+        el('div', { class: 'grow' }, fg(t('common.sex'), selectEl('sex', [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))), '', true))),
+        el('div', { class: 'grow' }, fg(t('common.ageRange'), selectEl('ageRange', [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))), '', true)))
+      ]),
+      el('div', { class: 'row', style: 'gap:8px' }, [
+        el('button', { class: 'btn', type: 'submit' }, t('picker.createNewSave')),
+        el('button', {
+          class: 'btn btn--ghost btn--sm', type: 'button',
+          onClick: () => { createForm.reset(); createForm.hidden = true; createBtn.hidden = false; }
+        }, t('common.cancel') || 'Cancel')
+      ])
+    ]);
+    createBtn.addEventListener('click', () => {
+      createForm.hidden = false; createBtn.hidden = true;
+      const fn = createForm.elements['firstName']; if (fn) fn.focus();
+    });
+    root.appendChild(createBtn);
+    root.appendChild(createForm);
   }
 
   async function participantFormView(params, root) {
@@ -1972,46 +2222,50 @@
     const groupName = (id) => (groups.find((g) => g.id === id) || {}).name || '';
     const attendance = await DB.all('attendance');
 
-    // Sync-from-Ubuntu-eLearning button (any authenticated user can trigger)
-    const syncBtn = el('button', {
-      class: 'btn btn--soft btn--block',
-      onClick: async () => {
-        if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
-        const orig = syncBtn.textContent;
-        syncBtn.disabled = true;
-        syncBtn.textContent = t('sessions.syncing');
-        try {
-          const r = await window.API.moodleSync();
-          const s = (r && r.summary) || {};
-          if (s.skipped) {
-            toast(t('sessions.syncSkipped'));
-          } else if ((s.errors || []).length) {
-            console.warn('Sync errors:', s.errors);
-            toast(t('sessions.syncErrors', { n: s.errors.length }));
-          } else {
-            toast(t('sessions.syncResult', {
-              sNew: s.sessions_created || 0,
-              pNew: s.participants_created || 0
-            }));
+    // v0.3.7 — iOS Calls-style action circles under the search pill.
+    // Replaces the old soft sync button + "+ New session" link.
+    let syncBtnRef = null;
+    root.appendChild(actionCircles([
+      {
+        icon: ACTION_ICONS.sync,
+        label: t('actions.eLearning'),
+        ref: (n) => { syncBtnRef = n; },
+        onClick: async () => {
+          if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
+          const labelEl = syncBtnRef.querySelector('.action-circle__label');
+          const origLabel = labelEl.textContent;
+          syncBtnRef.disabled = true;
+          labelEl.textContent = t('actions.syncing');
+          try {
+            const r = await window.API.moodleSync();
+            const s = (r && r.summary) || {};
+            if (s.skipped) {
+              toast(t('sessions.syncSkipped'));
+            } else if ((s.errors || []).length) {
+              console.warn('Sync errors:', s.errors);
+              toast(t('sessions.syncErrors', { n: s.errors.length }));
+            } else {
+              toast(t('sessions.syncResult', {
+                sNew: s.sessions_created || 0,
+                pNew: s.participants_created || 0
+              }));
+            }
+            if (window.SYNC) await window.SYNC.syncNow();
+            await handleRoute();
+          } catch (err) {
+            toast(err.message || t('sync.status.error'));
+          } finally {
+            if (syncBtnRef) {
+              labelEl.textContent = origLabel;
+              syncBtnRef.disabled = false;
+            }
           }
-          // Pull the new data down so it shows in the list immediately
-          if (window.SYNC) await window.SYNC.syncNow();
-          await handleRoute();
-        } catch (err) {
-          toast(err.message || t('sync.status.error'));
-        } finally {
-          syncBtn.textContent = orig;
-          syncBtn.disabled = false;
         }
-      }
-    }, t('sessions.syncCta'));
-    root.appendChild(syncBtn);
-    root.appendChild(el('div', { class: 'spacer' }));
-
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(sessions.length, 'sessions.countOne', 'sessions.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/sessions/new' }, t('sessions.new'))
+      },
+      { icon: ACTION_ICONS.plus, label: t('actions.newSession'), href: '#/sessions/new' }
     ]));
+
+    root.appendChild(el('p', { class: 'muted' }, tn(sessions.length, 'sessions.countOne', 'sessions.countOther')));
 
     if (!sessions.length) {
       root.appendChild(emptyState(t('sessions.emptyTitle'), t('sessions.emptyBody'), '#/sessions/new', t('sessions.emptyCta')));
@@ -2031,6 +2285,7 @@
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
         el('div', { class: 'card' }, [
           el('div', { class: 'row between' }, [
+            thumbIcon('sessions'),
             el('div', { class: 'grow', style: 'min-width:0' }, [
               titleRow,
               el('div', { class: 'card__sub' }, [formatDate(s.date), groupName(s.groupId), s.location].filter(Boolean).join(' · '))
@@ -2042,6 +2297,7 @@
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.sessions' });
   }
 
   // ---------- Session form ----------
@@ -2160,15 +2416,18 @@
       go('/sessions/' + dup.id + '/edit');
     }
 
-    root.appendChild(el('div', { class: 'card' }, [
+    root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
-        el('div', null, [
-          el('div', { class: 'card__title' }, session.theme || t('common.noTheme')),
-          el('div', { class: 'card__sub' }, [
-            formatDate(session.date),
-            group ? group.name : t('session.unknownGroup'),
-            session.location
-          ].filter(Boolean).join(' · '))
+        el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
+          thumbIcon('sessions'),
+          el('div', { style: 'min-width:0' }, [
+            el('div', { class: 'card__title' }, session.theme || t('common.noTheme')),
+            el('div', { class: 'card__sub' }, [
+              formatDate(session.date),
+              group ? group.name : t('session.unknownGroup'),
+              session.location
+            ].filter(Boolean).join(' · '))
+          ])
         ]),
         el('div', { class: 'row', style: 'gap:6px' }, [
           el('button', { class: 'btn btn--sm btn--ghost', type: 'button', onClick: duplicateSession }, t('session.duplicate')),
@@ -2178,7 +2437,10 @@
       session.notes ? el('p', { class: 'small', style: 'margin-top:8px; white-space:pre-wrap' }, session.notes) : null
     ]));
 
-    const heading = el('h3', null, t('session.attendanceHeading', { n: participants.length }));
+    const heading = el('h3', { class: 'section-h' }, [
+      el('span', { class: 'section-h__icon', html: THUMB_ICONS.attendance }),
+      el('span', { class: 'section-h__text' }, t('session.attendanceHeading', { n: participants.length }))
+    ]);
     root.appendChild(heading);
 
     const presentCountEl = el('p', { class: 'muted small' });
@@ -2282,18 +2544,30 @@
       participants.forEach((p) => attendanceList.appendChild(makeAttendanceRow(p)));
     }
     root.appendChild(attendanceList);
+    // Search bar over the attendance rows — scoped to .att-row so the
+    // walk-in picker below stays unfiltered. Skip on empty rosters.
+    if (participants.length) {
+      attachListSearch(attendanceList, {
+        key: 'pwa.session.' + session.id + '.attendance',
+        placeholder: t('common.searchPh'),
+        itemSelector: '.att-row',
+        position: 'beforeItems',
+      });
+    }
 
     // ---------- Walk-in attendance (picker-first) ----------
     // v0.3.5a — Trainers and admins both see a searchable picker of users in
     // Ubuntu 3.0. Picking a user marks them present (enrolling them in the
     // course on the fly if they weren't already). A "+ Create new" expander
     // at the bottom handles true first-time walk-ins.
+    // v0.3.7 — the opener is now an action circle in the row under the
+    // attendance search bar. openPanel is declared at function scope so
+    // the circle below the search can call it; the panel itself is built
+    // inside the if(group) block.
+    let openPanel = null;
     if (group) {
       const panel  = el('div', { class: 'card', style: 'margin-top:12px', hidden: true });
-      const openBtn = el('button', {
-        class: 'btn btn--soft btn--block', style: 'margin-top:12px', type: 'button',
-        onClick: () => { panel.hidden = false; openBtn.hidden = true; renderWalkInPicker(); }
-      }, t('session.walkInCta'));
+      openPanel = function () { panel.hidden = false; renderWalkInPicker(); };
 
       /**
        * Mark a user present at this session. If they aren't yet a participant
@@ -2359,7 +2633,7 @@
           panel.appendChild(el('div', { class: 'row', style: 'margin-top:8px; justify-content:flex-end' },
             el('button', {
               class: 'btn btn--ghost btn--sm', type: 'button',
-              onClick: () => { panel.hidden = true; openBtn.hidden = false; }
+              onClick: () => { panel.hidden = true; }
             }, t('common.cancel'))
           ));
           return;
@@ -2491,30 +2765,38 @@
         panel.appendChild(el('div', { class: 'row', style: 'margin-top:14px; justify-content:flex-end' },
           el('button', {
             class: 'btn btn--ghost btn--sm', type: 'button',
-            onClick: () => { panel.hidden = true; openBtn.hidden = false; }
+            onClick: () => { panel.hidden = true; }
           }, t('session.pickListDone'))
         ));
       }
 
-      root.appendChild(openBtn);
       root.appendChild(panel);
     }
 
-    // Link back to the parent Course
-    if (group) {
-      const label = group.name
-        ? t('session.viewCourseCta', { name: group.name })
-        : t('session.viewCourseCtaNoName');
-      root.appendChild(el('a', {
-        class: 'btn btn--ghost btn--block', style: 'margin-top:12px',
-        href: `#/groups/${group.id}`
-      }, label));
-    }
-
-    root.appendChild(el('a', {
-      class: 'btn btn--soft btn--block', style: 'margin-top:12px',
-      href: `#/stories/new?sessionId=${session.id}`
-    }, t('session.addStoryCta')));
+    // v0.3.7 — three actions formerly at the bottom of the page now sit
+    // as iOS-Calls-style circles in one row, slotted under the attendance
+    // search bar. Falls back to underneath the heading when there's no
+    // search (empty roster).
+    const sessActions = actionCircles([
+      group && openPanel ? {
+        icon: ACTION_ICONS.walkIn,
+        label: t('actions.walkIn'),
+        onClick: () => openPanel()
+      } : null,
+      group ? {
+        icon: ACTION_ICONS.course,
+        label: t('actions.viewCourse'),
+        href: '#/groups/' + group.id
+      } : null,
+      {
+        icon: ACTION_ICONS.story,
+        label: t('actions.addStory'),
+        href: '#/stories/new?sessionId=' + session.id
+      }
+    ].filter(Boolean));
+    const attSearch = attendanceList.querySelector('.list-search');
+    if (attSearch) attSearch.after(sessActions);
+    else attendanceList.parentNode.insertBefore(sessActions, attendanceList);
   }
 
   // ---------- Stories list ----------
@@ -2523,10 +2805,10 @@
     const stories = (await DB.all('stories'))
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
-    root.appendChild(el('div', { class: 'row between' }, [
-      el('p', { class: 'muted' }, tn(stories.length, 'stories.countOne', 'stories.countOther')),
-      el('a', { class: 'btn btn--sm', href: '#/stories/new' }, t('stories.new'))
+    root.appendChild(actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newStory'), href: '#/stories/new' }
     ]));
+    root.appendChild(el('p', { class: 'muted' }, tn(stories.length, 'stories.countOne', 'stories.countOther')));
 
     if (!stories.length) {
       root.appendChild(emptyState(t('stories.emptyTitle'), t('stories.emptyBody'), '#/stories/new', t('stories.emptyCta')));
@@ -2537,30 +2819,136 @@
     const participants = await DB.all('participants');
 
     stories.forEach((s) => {
-      const thumb = el('div', { class: 'thumb' });
-      if (s.photo) {
-        const img = el('img', { alt: '' });
-        img.src = URL.createObjectURL(s.photo);
-        img.onload = () => URL.revokeObjectURL(img.src);
-        thumb.appendChild(img);
-      } else if (s.audio) {
-        thumb.textContent = 'AUDIO';
-      } else {
-        thumb.textContent = 'TXT';
-      }
       const tag = s.sessionId ? ((sessions.find((x) => x.id === s.sessionId) || {}).theme || t('stories.tag.session'))
         : s.participantId ? ((participants.find((x) => x.id === s.participantId) || {}).firstName || t('stories.tag.participant'))
         : t('stories.tag.free');
       root.appendChild(el('a', { class: 'card-link', href: `#/stories/${s.id}/edit` }, [
         el('div', { class: 'list-item' }, [
-          thumb,
+          storyThumb(s),
           el('div', { class: 'grow' }, [
-            el('div', { class: 'list-item__title' }, s.text ? (s.text.length > 60 ? s.text.slice(0, 60) + '…' : s.text) : t('common.noText')),
+            el('div', { class: 'list-item__title' }, (() => {
+              const plain = stripHtml(s.text || '');
+              return plain ? (plain.length > 60 ? plain.slice(0, 60) + '…' : plain) : t('common.noText');
+            })()),
             el('div', { class: 'list-item__sub' }, [tag, formatDate(s.updatedAt), s.consent ? t('stories.hasConsent') : t('stories.noConsent')].filter(Boolean).join(' · '))
           ])
         ])
       ]));
     });
+    attachListSearch(root, { key: 'pwa.stories' });
+  }
+
+  // ---------- Reports (PWA, trainer-focused) ----------
+  // Two cards: data-quality alerts (participants missing sex/age) and
+  // a publish digest (stories opted-in for the public news feed). Both
+  // honour the dashboard's myCoursesOnly filter so trainers see "their"
+  // numbers first; admins can flip the filter off in Settings.
+  async function reportsView(_params, root) {
+    setTitle(t('reports.title'));
+
+    const allGroups = await DB.all('groups');
+    const groups = applyMyCourses(allGroups);
+    const myGroupIds = new Set(groups.map((g) => g.id));
+    const groupName = (id) => (allGroups.find((g) => g.id === id) || {}).name || '';
+
+    // ----- Card 1: participants with missing demographics -----
+    // Walk-ins are session-scoped data points, not enrolees — exclude
+    // them so we don't badger trainers about walk-in records they may
+    // never see again.
+    const participants = (await DB.all('participants'))
+      .filter((p) => !p.walkInSessionId)
+      .filter((p) => myGroupIds.has(p.groupId))
+      .filter((p) => p.status !== 'dropped')
+      .filter((p) => !p.sex || !p.ageRange)
+      .sort((a, b) => ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
+
+    const missingCard = el('div', { class: 'card card--accent' }, [
+      el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.warning }),
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('reports.missingTitle')),
+          el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'))
+        ])
+      ])
+    ]);
+    root.appendChild(missingCard);
+
+    if (participants.length) {
+      participants.forEach((p) => {
+        const missing = [
+          !p.sex      ? t('common.sex')      : null,
+          !p.ageRange ? t('common.ageRange') : null
+        ].filter(Boolean).join(' · ');
+        const title = el('div', { class: 'list-item__title' }, [
+          document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+          p.source === 'moodle'
+            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+            : null
+        ]);
+        root.appendChild(el('a', { class: 'card-link', href: `#/participants/${p.id}/edit` }, [
+          el('div', { class: 'list-item' }, [
+            thumbIcon('participants'),
+            el('div', { class: 'grow' }, [
+              title,
+              el('div', { class: 'list-item__sub' }, [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · '))
+            ])
+          ])
+        ]));
+      });
+    } else {
+      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone')));
+    }
+
+    // ----- Card 2: stories that ship to the public feed -----
+    // publishable=true implies consent=true (the story form forces that),
+    // so we don't double-check consent here. We do scope by course when
+    // the story has a session; orphan/no-session stories are always shown
+    // because there's no other natural place for the trainer to find them.
+    const sessions = await DB.all('sessions');
+    const sessionGroupOf = (sid) => (sessions.find((s) => s.id === sid) || {}).groupId || null;
+    const stories = (await DB.all('stories'))
+      .filter((s) => !!s.publishable)
+      .filter((s) => {
+        if (!s.sessionId) return true;             // free-form story → keep
+        const gid = sessionGroupOf(s.sessionId);
+        return !gid || myGroupIds.has(gid);        // unknown course → keep, mine → keep
+      })
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
+    root.appendChild(el('div', { style: 'height:14px' }));
+
+    const publishCard = el('div', { class: 'card card--accent' }, [
+      el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.publish }),
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('reports.publishedTitle')),
+          el('div', { class: 'card__sub' }, tn(stories.length, 'reports.publishedCountOne', 'reports.publishedCountOther'))
+        ])
+      ])
+    ]);
+    root.appendChild(publishCard);
+
+    if (stories.length) {
+      stories.forEach((s) => {
+        root.appendChild(el('a', { class: 'card-link', href: `#/stories/${s.id}/edit` }, [
+          el('div', { class: 'list-item' }, [
+            storyThumb(s),
+            el('div', { class: 'grow' }, [
+              el('div', { class: 'list-item__title' }, (() => {
+                const plain = stripHtml(s.text || '');
+                return plain ? (plain.length > 60 ? plain.slice(0, 60) + '…' : plain) : t('common.noText');
+              })()),
+              el('div', { class: 'list-item__sub' }, [
+                s.sessionId ? groupName(sessionGroupOf(s.sessionId)) : null,
+                formatDate(s.updatedAt)
+              ].filter(Boolean).join(' · '))
+            ])
+          ])
+        ]));
+      });
+    } else {
+      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.publishedNone')));
+    }
   }
 
   // ---------- Story form ----------
@@ -2653,9 +3041,12 @@
       }
     });
 
+    // v0.3.7 — long story text is now rich-text. Stores HTML in story.text.
+    const rtEditor = buildRichTextEditor(story.text || '', { placeholder: t('story.textPh') });
+
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
-      story.text = form.elements['text'].value.trim();
+      story.text = rtEditor.getHtml();
       story.sessionId = form.elements['sessionId'].value || null;
       story.participantId = form.elements['participantId'].value || null;
       story.consent = consentInput.checked;
@@ -2678,7 +3069,7 @@
       if (window.SYNC) window.SYNC.syncNow().catch(() => {});
       go('/stories');
     } }, [
-      fg(t('story.textLabel'), el('textarea', { name: 'text', placeholder: t('story.textPh') }, story.text || '')),
+      fg(t('story.textLabel'), rtEditor.wrapper),
       fg(t('story.photoLabel'), el('div', { class: 'row', style: 'gap:12px; align-items:center' }, [
         photoPreview,
         el('label', { class: 'btn btn--sm btn--soft' }, [
@@ -2752,10 +3143,12 @@
   // Anything missing falls back to defaults defined here.
   const SETTINGS = (() => {
     const KEY = 'ubuntu30.settings';
-    const ALL_DASH_TILES = ['sessionsMonth', 'stories', 'groups', 'cohorts'];
+    const ALL_DASH_TILES = ['sessionsMonth', 'stories', 'groups', 'participants', 'cohorts'];
     // Default visible tiles + order. Cohorts intentionally OFF — they're
-    // navigational scaffolding, not a headline metric. Participants is not
-    // in the list at all: that count only makes sense inside a course.
+    // navigational scaffolding, not a headline metric. Participants is now
+    // optionally exposed (off by default) — count honours 'my courses only',
+    // so trainers see the size of their cohort at a glance when they want
+    // to.
     const DEFAULT_TILES = ['sessionsMonth', 'stories', 'groups'];
 
     function read() {
@@ -2780,8 +3173,38 @@
         tiles
       };
     }
-    return { read, write, dashCfg, ALL_DASH_TILES, DEFAULT_TILES };
+    // v0.3.7 — Chrome (header/tab-bar) preferences. Right now the only
+    // knob is whether the Cohorts tab appears in the bottom bar.
+    // Default OFF for trainers (cohorts are a planning view they rarely
+    // touch in the field) and ON for admins. Stored alongside dash to
+    // keep one localStorage key.
+    function chromeCfg(s) {
+      const c = (s && s.chrome) || {};
+      const role = (window.CURRENT_AUTHOR && window.CURRENT_AUTHOR.role)
+                || (typeof CURRENT_AUTHOR !== 'undefined' && CURRENT_AUTHOR && CURRENT_AUTHOR.role)
+                || 'trainer';
+      const defaultShow = (role === 'admin');
+      const show = (c.showCohortsTab === undefined) ? defaultShow : !!c.showCohortsTab;
+      return { showCohortsTab: show };
+    }
+    return { read, write, dashCfg, chromeCfg, ALL_DASH_TILES, DEFAULT_TILES };
   })();
+
+  // Hide or reveal the Cohorts tab according to the chrome setting.
+  // Called from applyStaticLabels (initial load + lang change + settings
+  // save), so it's the single point where the bottom bar reflows.
+  function applyTabVisibility() {
+    const cfg = SETTINGS.chromeCfg(SETTINGS.read());
+    const cohortTab = document.querySelector('.tab[data-tab="cohorts"]');
+    if (cohortTab) cohortTab.hidden = !cfg.showCohortsTab;
+    // Reflow the grid so the remaining tabs split the bar evenly
+    // instead of leaving a blank column where Cohorts used to sit.
+    const bar = document.querySelector('.tabbar');
+    if (bar) {
+      const visible = Array.from(bar.querySelectorAll('.tab')).filter((t) => !t.hidden).length;
+      bar.style.gridTemplateColumns = 'repeat(' + Math.max(visible, 1) + ', 1fr)';
+    }
+  }
 
   // -------- "My courses" filtering helpers --------
   // The Courses tile, Sessions tile, Courses list and Sessions list can all
@@ -2843,11 +3266,18 @@
       body.innerHTML = '';
       const settings = SETTINGS.read();
       const dash = SETTINGS.dashCfg(settings);
+      const chrome = SETTINGS.chromeCfg(settings);
 
       function save(partial) {
         const next = Object.assign({}, settings, { dash: Object.assign({}, dash, partial) });
         SETTINGS.write(next);
         render();   // re-render popup body only — no full route navigation
+      }
+      function saveChrome(partial) {
+        const next = Object.assign({}, settings, { chrome: Object.assign({}, chrome, partial) });
+        SETTINGS.write(next);
+        applyTabVisibility();
+        render();
       }
 
       // ----- Dashboard section -----
@@ -2890,11 +3320,26 @@
           const labelKey = key === 'sessionsMonth' ? 'dash.tile.sessionsMonth'
                          : key === 'stories'       ? 'dash.tile.stories'
                          : key === 'groups'        ? 'dash.tile.groups'
+                         : key === 'participants'  ? 'dash.tile.participants'
                          : /* cohorts */             'dash.tile.cohorts';
           return el('label', { class: 'popup__row' }, [cb, el('span', null, t(labelKey))]);
         }))
       ]);
       body.appendChild(section);
+
+      // ----- Navigation section -----
+      // Right now there's only one toggle (Cohorts tab) but the
+      // section is structured to host more bottom-bar prefs later.
+      const navSection = el('div', { class: 'popup__section' }, [
+        el('h4', null, t('settings.nav')),
+        (() => {
+          const cb = el('input', { type: 'checkbox' });
+          cb.checked = chrome.showCohortsTab;
+          cb.addEventListener('change', () => saveChrome({ showCohortsTab: cb.checked }));
+          return el('label', { class: 'popup__row' }, [cb, el('span', null, t('settings.showCohortsTab'))]);
+        })()
+      ]);
+      body.appendChild(navSection);
     }
 
     render();
@@ -2908,6 +3353,18 @@
   // ---------- More: account, sync, settings, export ----------
   async function moreView(_params, root) {
     setTitle(t('more.title'));
+
+    // Settings — top of the More tab so it's the first thing trainers
+    // reach for. Tapping the button opens the same popup the header
+    // gear used to open before v0.3.7.
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h3', null, t('settings.title')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('more.settingsNote')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => openSettingsPopup()
+      }, t('more.openSettings'))
+    ]));
 
     // Account (v0.2)
     if (window.API && window.API.isAuthenticated()) {
@@ -3050,13 +3507,45 @@
     ]));
 
     // App
+    const lastSyncLineEl = el('p', { class: 'small muted' }, t('more.lastSyncLoading'));
+    // Populate "Last sync · 2 min ago" once we can read the sync state.
+    (async () => {
+      try {
+        const s = window.SYNC ? await window.SYNC.getState() : null;
+        const iso = s && s.lastSync ? s.lastSync : null;
+        lastSyncLineEl.textContent = iso
+          ? t('more.lastSyncAgo', { ago: formatRelativeAgo(iso) })
+          : t('more.lastSyncNever');
+      } catch (e) {
+        lastSyncLineEl.textContent = t('more.lastSyncNever');
+      }
+    })();
+
     root.appendChild(el('div', { class: 'card' }, [
       el('h3', null, t('more.app')),
-      el('p', { class: 'small muted' }, t('more.version')),
+      el('p', { class: 'small muted' }, t('more.version', { v: APP_VERSION })),
+      lastSyncLineEl,
       el('p', { class: 'small muted' }, t('more.installHint')),
+      // Copy a diagnostic to clipboard — useful when a trainer needs to file
+      // an issue. One-tap, no jargon, paste into email / WhatsApp.
       el('button', {
         class: 'btn btn--ghost btn--block',
-        style: 'color:var(--danger); border-color:var(--danger)',
+        style: 'margin-top:8px',
+        onClick: async () => {
+          const text = await buildDiagnostic();
+          try {
+            await navigator.clipboard.writeText(text);
+            toast(t('more.diagCopied'));
+          } catch (e) {
+            // Fallback: dump into a prompt so the user can copy manually.
+            try { window.prompt(t('more.diagFallbackPrompt'), text); } catch (_) {}
+            toast(t('more.diagFallback'));
+          }
+        }
+      }, t('more.diagCta')),
+      el('button', {
+        class: 'btn btn--ghost btn--block',
+        style: 'margin-top:8px; color:var(--danger); border-color:var(--danger)',
         onClick: async () => {
           if (!confirm(t('more.clearConfirm'))) return;
           const savedLang = CURRENT_AUTHOR.lang;
@@ -3072,12 +3561,108 @@
     ]));
   }
 
+  /** Compact "in N units" relative-time string used by the More tab. */
+  function formatRelativeAgo(iso) {
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return '—';
+    const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (s < 60)       return t('more.ago.justNow');
+    if (s < 3600)    return t('more.ago.min',  { n: Math.round(s / 60) });
+    if (s < 86400)   return t('more.ago.hour', { n: Math.round(s / 3600) });
+    return t('more.ago.day', { n: Math.round(s / 86400) });
+  }
+
+  /** Build a plain-text diagnostic blob for support. */
+  async function buildDiagnostic() {
+    const apiUser = (window.API && window.API.getUser()) || {};
+    const role = apiUser.role || '—';
+    const email = apiUser.email || '—';
+    const lang = (CURRENT_AUTHOR && CURRENT_AUTHOR.lang) || (window.I18N && window.I18N.getLang()) || 'fr';
+    const online = navigator.onLine ? 'online' : 'offline';
+    let lastSync = '—', syncStatus = '—', pendingDirty = 0;
+    try {
+      const s = window.SYNC ? await window.SYNC.getState() : null;
+      if (s) {
+        lastSync = s.lastSync || '—';
+        syncStatus = s.status || '—';
+      }
+    } catch (e) {}
+    // IndexedDB counts (best-effort, count rows including tombstones).
+    async function n(store) {
+      try { return (await DB.all(store, true)).length; }
+      catch (e) { return -1; }
+    }
+    const counts = {};
+    for (const store of ['cohorts', 'groups', 'participants', 'sessions', 'attendance', 'stories']) {
+      counts[store] = await n(store);
+    }
+    try {
+      pendingDirty = 0;
+      for (const store of ['cohorts', 'groups', 'participants', 'sessions', 'attendance', 'stories']) {
+        const rows = await DB.all(store, true);
+        pendingDirty += rows.filter((r) => r.dirty).length;
+      }
+    } catch (e) {}
+
+    const lines = [];
+    lines.push('Ubuntu 3.0 diagnostic');
+    lines.push('=====================');
+    lines.push('Version:      v' + APP_VERSION);
+    lines.push('Generated:    ' + new Date().toISOString());
+    lines.push('Network:      ' + online);
+    lines.push('Language:     ' + lang);
+    lines.push('Account:      ' + email + '  (' + role + ')');
+    lines.push('');
+    lines.push('Sync');
+    lines.push('  status:     ' + syncStatus);
+    lines.push('  last sync:  ' + lastSync);
+    lines.push('  pending:    ' + pendingDirty + ' dirty record(s) waiting to push');
+    lines.push('');
+    lines.push('Local data');
+    Object.keys(counts).forEach((k) => {
+      lines.push('  ' + k.padEnd(15) + counts[k]);
+    });
+    lines.push('');
+    lines.push('User agent:   ' + (navigator.userAgent || '—'));
+    lines.push('Screen:       ' + (window.screen ? (screen.width + 'x' + screen.height) : '—'));
+    return lines.join('\n');
+  }
+
   // ============================================================
   //  UI helpers
   // ============================================================
 
   function fg(label, control) {
     return el('div', { class: 'form-group' }, [el('label', null, label), control]);
+  }
+
+  // Password field with an eye toggle so the trainer can reveal what
+  // they typed — helpful on touch keyboards where it's easy to mistype
+  // an uppercase letter or a number. Accepts the same attrs as a plain
+  // <input>, forces type='password' at first paint, and returns a
+  // wrapper element so fg() can slot it under a <label>.
+  const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+  const EYE_OFF_SVG  = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92C21.16 15.05 22.49 13.65 23 12c-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.27-3.97.74l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 9.85 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53a5 5 0 0 1-5-5c0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16a3 3 0 0 0-3-3l-.17.01z"/></svg>';
+  function passwordInput(attrs) {
+    const input = el('input', Object.assign({}, attrs || {}, { type: 'password' }));
+    const btn = el('button', {
+      type: 'button',
+      class: 'pw-toggle',
+      'aria-label': t('auth.showPw'),
+      'aria-pressed': 'false',
+      tabindex: '-1',
+      html: EYE_OPEN_SVG,
+    });
+    btn.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.innerHTML = showing ? EYE_OPEN_SVG : EYE_OFF_SVG;
+      btn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+      btn.setAttribute('aria-label', showing ? t('auth.showPw') : t('auth.hidePw'));
+      // Keep keyboard focus on the input so typing isn't interrupted
+      input.focus();
+    });
+    return el('div', { class: 'pw-wrap' }, [input, btn]);
   }
   function selectEl(name, options, value, required, onChange) {
     const sel = el('select', { name, required: !!required });
@@ -3090,11 +3675,15 @@
     return sel;
   }
   function emptyState(title, msg, href, btnLabel) {
+    // CTA is optional — when the surrounding section already exposes
+    // the same action (e.g. a + Participant button next to the
+    // heading) we skip the duplicate button to keep the screen clean.
+    const showCta = !!(href && btnLabel);
     return el('div', { class: 'empty' }, [
       el('h3', null, title),
       el('p', null, msg),
-      el('div', { class: 'spacer' }),
-      el('a', { class: 'btn', href }, btnLabel)
+      showCta ? el('div', { class: 'spacer' }) : null,
+      showCta ? el('a', { class: 'btn', href }, btnLabel) : null
     ]);
   }
   function dangerButton(label, onClick) {
@@ -3103,6 +3692,475 @@
       style: 'margin-top:12px; color:var(--danger); border-color:var(--danger)',
       onClick
     }, label);
+  }
+
+  /**
+   * Build a small rich-text editor (B / I / bullet list / paragraph break).
+   * Returns { wrapper, getHtml, focus } so the caller can drop the wrapper
+   * into a form and read getHtml() on submit.
+   *
+   * Storage model: the editor saves rendered HTML in story.text. For backward
+   * compatibility with stories written before this commit (plain text), we
+   * detect "looks like plain text" and convert newlines to <br> on load.
+   * stripHtml() is the inverse used by list-preview helpers.
+   */
+  function buildRichTextEditor(initial, opts) {
+    opts = opts || {};
+    const placeholder = opts.placeholder || '';
+
+    // Convert legacy plain text → safe HTML so it renders as expected.
+    function loadInitial(raw) {
+      const s = String(raw || '');
+      // Heuristic: if the string contains any block-level or formatting tag,
+      // assume it's already HTML. Otherwise treat as plain text.
+      if (/<(p|br|ul|ol|li|strong|em|b|i|u|div|span)\b/i.test(s)) return s;
+      // Escape ‹ &  › and turn newlines into <br>.
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\r?\n/g, '<br>');
+    }
+
+    const editor = el('div', {
+      class: 'rt-editor',
+      contenteditable: 'true',
+      role: 'textbox',
+      'aria-multiline': 'true',
+      'data-placeholder': placeholder
+    });
+    editor.innerHTML = loadInitial(initial);
+
+    // Toolbar buttons — use execCommand. It's deprecated but universally
+    // supported in browsers we ship to (mobile Safari + Chrome) and is the
+    // cheapest way to get correct nested-list behaviour. When we outgrow it
+    // we'll swap in a DOM-mutating impl.
+    function tbBtn(label, cmd, title) {
+      return el('button', {
+        type: 'button',
+        class: 'rt-tb-btn',
+        title: title || label,
+        'aria-label': title || label,
+        // mousedown (not click) so the editor doesn't lose focus before exec
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand(cmd, false, null);
+        }
+      }, label);
+    }
+    // Save the current selection before opening the color picker (the
+    // native color dialog steals focus on some browsers).
+    let savedRange = null;
+    function saveSelection() {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) savedRange = sel.getRangeAt(0).cloneRange();
+    }
+    function restoreSelection() {
+      if (!savedRange) return;
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    }
+
+    // Font-size buttons step through HTML's 1–7 scale via execCommand. Two
+    // visible buttons (A− / A+) jump the current selection down to 2 or
+    // up to 5; tapping the same one twice still produces a visible change
+    // because each tap re-wraps with a fresh <font size> element.
+    function fontSizeBtn(label, size, title) {
+      return el('button', {
+        type: 'button',
+        class: 'rt-tb-btn',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand('fontSize', false, String(size));
+        }
+      }, label);
+    }
+
+    // Native color picker bound to a <font color="#hex"> via execCommand.
+    const colorInput = el('input', {
+      type: 'color', value: '#1B1B1B',
+      style: 'position:absolute; opacity:0; width:0; height:0; pointer-events:none'
+    });
+    colorInput.addEventListener('input', () => {
+      restoreSelection();
+      document.execCommand('foreColor', false, colorInput.value);
+    });
+    const colorBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-color',
+      title: t('rt.color') || 'Color',
+      'aria-label': t('rt.color') || 'Color',
+      onMousedown: (e) => {
+        // Capture the selection before the color dialog opens.
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        // Open the picker after the focus dance settles.
+        setTimeout(() => colorInput.click(), 0);
+      }
+    }, [
+      el('span', { style: 'font-weight:700' }, 'A'),
+      el('span', { class: 'rt-tb-color-swatch', style: 'background:' + colorInput.value }),
+    ]);
+
+    // Inline-SVG variant of tbBtn for the icon-only buttons (undo/redo).
+    function tbIconBtn(svgPath, cmd, title) {
+      const btn = el('button', {
+        type: 'button',
+        class: 'rt-tb-btn rt-tb-icon',
+        title, 'aria-label': title,
+        onMousedown: (e) => {
+          e.preventDefault();
+          editor.focus();
+          document.execCommand(cmd, false, null);
+        }
+      });
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + svgPath + '</svg>';
+      return btn;
+    }
+    // Material-style undo / redo curl arrows.
+    const ICON_UNDO = '<path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>';
+    const ICON_REDO = '<path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>';
+    const ICON_LINK = '<path fill="currentColor" d="M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8v2zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/>';
+    const ICON_IMG  = '<path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>';
+
+    // ---------- Link button ----------
+    // Wraps the selection in <a href="…">. We validate the URL (http(s)://
+    // or mailto:) so the sanitiser doesn't have to allow arbitrary schemes.
+    const linkBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-icon',
+      title: t('rt.link') || 'Link',
+      'aria-label': t('rt.link') || 'Link',
+      onMousedown: (e) => {
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        // Pre-fill the prompt with any href already on the selection.
+        const sel = window.getSelection();
+        let existingHref = '';
+        if (sel && sel.anchorNode) {
+          const a = (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement).closest('a');
+          if (a) existingHref = a.getAttribute('href') || '';
+        }
+        const url = window.prompt(t('rt.linkPrompt') || 'Link URL', existingHref || 'https://');
+        if (url == null) { restoreSelection(); return; }   // cancelled
+        const trimmed = url.trim();
+        if (!trimmed) {
+          // Empty input → remove the link
+          restoreSelection();
+          document.execCommand('unlink', false, null);
+          return;
+        }
+        if (!/^(https?:\/\/|mailto:)/i.test(trimmed)) {
+          toast(t('rt.linkInvalid') || 'Link must start with https://, http:// or mailto:');
+          return;
+        }
+        restoreSelection();
+        document.execCommand('createLink', false, trimmed);
+        // execCommand doesn't set rel/target — patch the just-created anchor.
+        const range = window.getSelection().getRangeAt(0);
+        const a = range && range.commonAncestorContainer ?
+          (range.commonAncestorContainer.nodeType === 1
+            ? range.commonAncestorContainer.querySelector('a[href="' + trimmed + '"]')
+            : range.commonAncestorContainer.parentElement.querySelector('a[href="' + trimmed + '"]'))
+          : null;
+        if (a) {
+          a.setAttribute('rel', 'noopener noreferrer');
+          a.setAttribute('target', '_blank');
+        }
+      }
+    });
+    linkBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + ICON_LINK + '</svg>';
+
+    // ---------- Image button ----------
+    // Opens a file picker that the OS may surface as "Take photo" on
+    // mobile (the capture=environment hint). The image is read, drawn into
+    // a 800px-wide canvas at JPEG quality 0.75, then embedded as a data: URI
+    // <img>. Stays inline in story.text — no separate upload.
+    // Limit: 3 images per story (UI guard).
+    const MAX_IMAGES_PER_STORY = 3;
+    const MAX_IMG_WIDTH = 800;
+    const JPEG_QUALITY  = 0.75;
+    const imageInput = el('input', {
+      type: 'file',
+      accept: 'image/*',
+      capture: 'environment',
+      style: 'position:absolute; opacity:0; width:0; height:0; pointer-events:none'
+    });
+    imageInput.addEventListener('change', async () => {
+      const file = imageInput.files && imageInput.files[0];
+      imageInput.value = '';   // reset so the same file can be picked again
+      if (!file) return;
+      const existing = editor.querySelectorAll('img').length;
+      if (existing >= MAX_IMAGES_PER_STORY) {
+        toast(t('rt.imgLimit', { n: MAX_IMAGES_PER_STORY }) || 'Max images reached');
+        return;
+      }
+      try {
+        const dataUrl = await compressImageToDataUrl(file, MAX_IMG_WIDTH, JPEG_QUALITY);
+        restoreSelection();
+        document.execCommand('insertHTML', false,
+          '<img src="' + dataUrl + '" alt="" style="max-width:100%;height:auto;border-radius:8px;margin:6px 0">');
+      } catch (err) {
+        toast(t('rt.imgError') || ('Image failed: ' + (err.message || err)));
+      }
+    });
+    const imgBtn = el('button', {
+      type: 'button',
+      class: 'rt-tb-btn rt-tb-icon',
+      title: t('rt.image') || 'Insert image',
+      'aria-label': t('rt.image') || 'Insert image',
+      onMousedown: (e) => {
+        e.preventDefault();
+        editor.focus();
+        saveSelection();
+        setTimeout(() => imageInput.click(), 0);
+      }
+    });
+    imgBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' + ICON_IMG + '</svg>';
+
+    const toolbar = el('div', { class: 'rt-toolbar' }, [
+      tbBtn('B', 'bold',                t('rt.bold')      || 'Bold'),
+      tbBtn('I', 'italic',              t('rt.italic')    || 'Italic'),
+      tbBtn('U', 'underline',           t('rt.underline') || 'Underline'),
+      tbBtn('•', 'insertUnorderedList', t('rt.bullets')   || 'Bulleted list'),
+      tbBtn('¶', 'formatBlock',         t('rt.paragraph') || 'Paragraph'),
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      fontSizeBtn('A−', 2, t('rt.smaller') || 'Smaller'),
+      fontSizeBtn('A+', 5, t('rt.larger')  || 'Larger'),
+      colorBtn,
+      colorInput,
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      linkBtn,
+      imgBtn,
+      imageInput,
+      // Separator
+      el('span', { class: 'rt-tb-sep' }),
+      tbIconBtn(ICON_UNDO, 'undo', t('rt.undo') || 'Undo'),
+      tbIconBtn(ICON_REDO, 'redo', t('rt.redo') || 'Redo'),
+    ]);
+    // The "U" button uses execCommand('underline') with no value — wraps in <u>.
+    // The "¶" button needs a value, not just a command; handle it specially.
+    // (Find it by position: index 4 in the array above.)
+    const paraBtn = toolbar.children[4];
+    paraBtn.onmousedown = (e) => {
+      e.preventDefault();
+      editor.focus();
+      document.execCommand('formatBlock', false, 'p');
+    };
+    // Visual cue on the "U" button: render an underlined glyph.
+    const uBtn = toolbar.children[2];
+    if (uBtn) uBtn.style.textDecoration = 'underline';
+
+    // Keep the swatch in sync with the picker value as the user picks.
+    colorInput.addEventListener('change', () => {
+      const swatch = colorBtn.querySelector('.rt-tb-color-swatch');
+      if (swatch) swatch.style.background = colorInput.value;
+    });
+
+    // ---------- Active-format highlight ----------
+    // When the selection or cursor sits inside <b>/<i>/<u>/<a>, light the
+    // matching toolbar button so the trainer sees "this text is already
+    // bold". Hooked to the document so it reacts to mouse + keyboard moves.
+    const formatButtons = {
+      bold:      toolbar.children[0],
+      italic:    toolbar.children[1],
+      underline: toolbar.children[2],
+    };
+    function syncToolbarState() {
+      // Only react while the selection is inside our editor.
+      const sel = window.getSelection();
+      const node = sel && sel.anchorNode;
+      const inside = node && (node.nodeType === 1 ? node : node.parentElement);
+      if (!inside || !editor.contains(inside)) return;
+      for (const cmd in formatButtons) {
+        const btn = formatButtons[cmd];
+        if (!btn) continue;
+        try {
+          if (document.queryCommandState(cmd)) btn.classList.add('rt-active');
+          else                                 btn.classList.remove('rt-active');
+        } catch (e) { /* some browsers throw for unsupported cmds */ }
+      }
+    }
+    document.addEventListener('selectionchange', syncToolbarState);
+    editor.addEventListener('keyup', syncToolbarState);
+    editor.addEventListener('click', syncToolbarState);
+
+    const wrapper = el('div', { class: 'rt-wrapper' }, [toolbar, editor]);
+
+    function getHtml() {
+      // Normalise: trim, drop a single trailing <br> the browser may append.
+      let html = (editor.innerHTML || '').trim();
+      html = html.replace(/(<br\s*\/?>\s*)+$/i, '').trim();
+      // If the user typed nothing visible, return empty string so the
+      // existing "story.empty" check still fires.
+      const plain = stripHtml(html).trim();
+      if (!plain) return '';
+      return html;
+    }
+
+    return { wrapper, getHtml, focus: () => editor.focus() };
+  }
+
+  /** Strip HTML tags from a string — used in list previews + dashboard cards. */
+  function stripHtml(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.innerHTML = String(s);
+    return (d.textContent || d.innerText || '').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Compress an image File to a JPEG data: URI, capped at `maxWidth` pixels.
+   * Used by the rich-text editor's image button. Aggressive compression is
+   * the entire reason inline data URIs are viable as story.text — a raw
+   * camera photo can be 3 MB; after this it's typically 30–80 KB.
+   *
+   * Returns a Promise resolving to "data:image/jpeg;base64,…".
+   */
+  function compressImageToDataUrl(file, maxWidth, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('FileReader failed'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Image decode failed'));
+        img.onload = () => {
+          try {
+            const scale = Math.min(1, maxWidth / img.naturalWidth);
+            const w = Math.round(img.naturalWidth  * scale);
+            const h = Math.round(img.naturalHeight * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width  = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            // White backdrop in case the source is transparent (PNG/HEIC) —
+            // JPEG doesn't carry alpha and would otherwise come out black.
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } catch (err) { reject(err); }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Install a live-filter search bar at the top of a list view.
+   *
+   * Call this AFTER the cards have been appended to `parent`. It snapshots
+   * the cards matching `itemSelector`, then inserts a search input + counter
+   * just before the first card. Typing filters in place; Escape clears.
+   *
+   * Per-view persistence: pass `key` (e.g. 'pwa.sessions') and the query
+   * survives navigation away and back in the same browser tab.
+   *
+   * @param {HTMLElement} parent  Container the cards live in.
+   * @param {object} opts
+   *   - key           sessionStorage key suffix; omit for ephemeral.
+   *   - placeholder   i18n'd search placeholder text.
+   *   - itemSelector  CSS selector for cards (default: '.card-link').
+   *   - minToShow     Don't bother rendering below this many items (default 4).
+   */
+  function attachListSearch(parent, opts) {
+    opts = opts || {};
+    const itemSel    = opts.itemSelector || '.card-link';
+    // Default to 1 so the search bar shows as soon as there's any content,
+    // matching iOS-style list UX (the bar is always there, predictable
+    // muscle memory). Callers that explicitly want to hide it on small
+    // lists can pass minToShow:4 etc.
+    const minToShow  = (opts.minToShow != null) ? opts.minToShow : 1;
+    const placeholder = opts.placeholder || (t('common.searchPh') || 'Search…');
+    const key        = opts.key || null;
+
+    const items = Array.from(parent.querySelectorAll(itemSel));
+    if (items.length < minToShow) return;
+
+    const cache = items.map((node) => (node.textContent || '').toLowerCase());
+
+    function readQ() {
+      if (!key) return '';
+      try { return sessionStorage.getItem('ubuntu30.listSearch.' + key) || ''; }
+      catch (e) { return ''; }
+    }
+    function writeQ(q) {
+      if (!key) return;
+      try { sessionStorage.setItem('ubuntu30.listSearch.' + key, q); } catch (e) {}
+    }
+
+    // The search bar is styled in app.css as .list-search-pill (iOS-style
+    // rounded pill with a magnifying-glass icon prepended). The counter
+    // sits to the right of the pill, also outside it.
+    const counter = el('span', {
+      class: 'small muted list-search-counter',
+    }, items.length + ' / ' + items.length);
+
+    const input = el('input', {
+      type: 'search',
+      placeholder,
+      autocomplete: 'off',
+      spellcheck: 'false',
+      class: 'list-search-input',
+    });
+    if (key) input.value = readQ();
+
+    // Inline-SVG magnifying glass — sits inside the pill, can't be styled
+    // away by browser-specific clear buttons.
+    const glassSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    glassSvg.setAttribute('viewBox', '0 0 24 24');
+    glassSvg.setAttribute('class', 'list-search-glass');
+    glassSvg.setAttribute('aria-hidden', 'true');
+    const glassPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    glassPath.setAttribute('fill', 'currentColor');
+    glassPath.setAttribute('d', 'M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z');
+    glassSvg.appendChild(glassPath);
+
+    const pill = el('label', { class: 'list-search-pill' }, [glassSvg, input]);
+
+    function apply() {
+      const q = (input.value || '').trim().toLowerCase();
+      let shown = 0;
+      for (let i = 0; i < items.length; i++) {
+        const hit = q === '' || cache[i].indexOf(q) !== -1;
+        items[i].style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      }
+      counter.textContent = shown + ' / ' + items.length;
+      if (key) writeQ(input.value || '');
+    }
+
+    ['input', 'keyup', 'change', 'search'].forEach((evt) => {
+      input.addEventListener(evt, apply);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value !== '') {
+        input.value = '';
+        apply();
+        e.stopPropagation();
+      }
+    });
+
+    const bar = el('div', { class: 'list-search' }, [pill, counter]);
+    // Placement: by default put it at the very top of the parent so the
+    // "Sync from Ubuntu eLearning" buttons and any hint paragraphs fall
+    // beneath it. Pass position:'beforeItems' to keep the old behaviour
+    // (search above the first card, after any leading content).
+    if (opts.position === 'beforeItems') {
+      parent.insertBefore(bar, items[0]);
+    } else {
+      parent.insertBefore(bar, parent.firstChild);
+    }
+    if (input.value) apply();
   }
 
   // ============================================================
@@ -3212,6 +4270,7 @@
   route('/stories', storiesListView);
   route('/stories/new', (_p, r) => storyFormView({}, r));
   route('/stories/:id/edit', storyFormView);
+  route('/reports', reportsView);
   route('/more', moreView);
 
   // ============================================================

@@ -50,7 +50,11 @@ final class Users
      */
     public static function create(): void
     {
-        Auth::requireAdmin();
+        // v0.3.7 — trainers may also create trainees from the PWA picker (the
+        // "+ Create a new person" expander on a course). We allow that
+        // specific path here and enforce admin-only for everything else
+        // (creating staff, sending invites, etc.) further below.
+        $caller = Auth::requireUser();
         $body = Util::jsonBody();
 
         $email     = strtolower(trim((string) ($body['email'] ?? '')));
@@ -69,6 +73,16 @@ final class Users
         // sendInvite controls whether a welcome email is dispatched. Defaults to TRUE
         // for trainers/admins (existing behavior) and FALSE for trainees (walk-ins).
         $sendInvite = array_key_exists('sendInvite', $body) ? (bool) $body['sendInvite'] : ($role !== 'trainee');
+
+        // Authorization: trainers may create trainees with sendInvite=false
+        // (the only path the PWA picker uses). Anything else stays admin-only.
+        $callerIsAdmin = ($caller['role'] === 'admin');
+        if (!$callerIsAdmin) {
+            $allowedForTrainer = ($role === 'trainee' && $sendInvite === false);
+            if (!$allowedForTrainer) {
+                Response::error('forbidden', 'Admin role required.', 403);
+            }
+        }
 
         if ($firstName === '') Response::error('bad_request', 'First name required.', 400);
         if ($lastName  === '') Response::error('bad_request', 'Last name required.', 400);

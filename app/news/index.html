@@ -289,9 +289,79 @@
       return n;
     }
     function snippet(text, n) {
-      text = (text || '').trim();
+      // Stories saved by the PWA v0.3.7+ contain HTML — strip tags for the card preview.
+      text = stripHtml(text || '').trim();
       if (text.length <= n) return text;
       return text.slice(0, n).replace(/\s+\S*$/, '') + '…';
+    }
+    // Use the browser's parser to strip tags safely (no regex on HTML).
+    function stripHtml(s) {
+      var d = document.createElement('div');
+      d.innerHTML = String(s || '');
+      return (d.textContent || d.innerText || '').replace(/\s+/g, ' ');
+    }
+    // Render the saved HTML through a strict allow-list before injecting.
+    // Story text can only contain:
+    //   plain formatting: <p> <br> <strong> <em> <b> <i> <u> <ul> <ol> <li>
+    //   font with attrs:  <font color="#xxxxxx" size="1-7">
+    //   anchor:           <a href="https://… | http://… | mailto:…">
+    //   image:            <img src="data:image/…">
+    // Anything else (script, iframe, style, on-handlers, javascript: URLs…)
+    // is dropped.
+    var SAFE_TAGS = { P:1, BR:1, STRONG:1, EM:1, B:1, I:1, U:1, UL:1, OL:1, LI:1, FONT:1, A:1, IMG:1 };
+    var HEX_RE  = /^#[0-9a-fA-F]{3,8}$/;
+    var SIZE_RE = /^[1-7]$/;
+    var HREF_RE = /^(https?:\/\/|mailto:)/i;
+    var DATA_IMG_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+    function sanitizeStoryHtml(raw) {
+      var src = document.createElement('div');
+      src.innerHTML = String(raw || '');
+      var dst = document.createElement('div');
+      (function walk(srcNode, dstNode) {
+        for (var i = 0; i < srcNode.childNodes.length; i++) {
+          var n = srcNode.childNodes[i];
+          if (n.nodeType === 3 /* text */) {
+            dstNode.appendChild(document.createTextNode(n.nodeValue));
+          } else if (n.nodeType === 1 /* element */ && SAFE_TAGS[n.nodeName]) {
+            var clone = document.createElement(n.nodeName.toLowerCase());
+            // Only specific tags carry attributes, and each is validated.
+            if (n.nodeName === 'FONT') {
+              var color = n.getAttribute('color');
+              if (color && HEX_RE.test(color)) clone.setAttribute('color', color);
+              var size = n.getAttribute('size');
+              if (size && SIZE_RE.test(size)) clone.setAttribute('size', size);
+            } else if (n.nodeName === 'A') {
+              var href = n.getAttribute('href') || '';
+              if (HREF_RE.test(href)) {
+                clone.setAttribute('href', href);
+                clone.setAttribute('rel', 'noopener noreferrer');
+                clone.setAttribute('target', '_blank');
+              } else {
+                // Bad scheme → drop the <a> wrapper, keep the text.
+                walk(n, dstNode);
+                continue;
+              }
+            } else if (n.nodeName === 'IMG') {
+              var src2 = n.getAttribute('src') || '';
+              if (DATA_IMG_RE.test(src2)) {
+                clone.setAttribute('src', src2);
+                clone.setAttribute('alt', n.getAttribute('alt') || '');
+                clone.style.maxWidth = '100%';
+                clone.style.height = 'auto';
+              } else {
+                // Disallowed src (http: image, javascript:, etc.) → drop.
+                continue;
+              }
+            }
+            walk(n, clone);
+            dstNode.appendChild(clone);
+          } else if (n.nodeType === 1) {
+            // Disallowed element — drop the tag, keep its text children.
+            walk(n, dstNode);
+          }
+        }
+      })(src, dst);
+      return dst.innerHTML;
     }
     // Remember locally-liked stories so the heart shows pressed without a server round-trip.
     function readLikedSet() {
@@ -372,7 +442,7 @@
       ].filter(Boolean));
 
       var body = el('div', { class: 'detail__body' });
-      if (s.text)     body.appendChild(el('p', { class: 'detail__text' }, s.text));
+      if (s.text)     body.appendChild(el('div', { class: 'detail__text', html: sanitizeStoryHtml(s.text) }));
       if (s.audioUrl) {
         var audio = el('audio', { class: 'detail__audio', controls: 'controls', preload: 'none' });
         audio.src = ORIGIN + s.audioUrl;

@@ -351,7 +351,7 @@
         s.theme || '',
         (groupsById.get(s.groupId) || {}).name || '',
         userName(s.authorId)
-      ]));
+      ]), null, { searchable: false });
       card.appendChild(tbl);
     }
     main.appendChild(card);
@@ -369,7 +369,7 @@
         s.consent ? pill('yes', 'pill--success') : pill('no', 'pill--warning'),
         [s.hasPhoto ? 'photo' : null, s.hasAudio ? 'audio' : null].filter(Boolean).join(', ') || '—',
         userName(s.authorId)
-      ]));
+      ]), null, { searchable: false });
       card2.appendChild(tbl);
     }
     main.appendChild(card2);
@@ -495,7 +495,13 @@
     });
     main.appendChild(renderTable(
       ['Username', 'Email', 'Phone', 'First name', 'Last name', 'Sex', 'Age', 'Role', 'Lang', 'Last login', 'Status', 'Actions'],
-      rows
+      rows,
+      null,
+      {
+        searchPlaceholder: (onTraineesRoute ? 'Search trainees…' : 'Search staff…') + ' (' + rows.length + ')',
+        tableKey: onTraineesRoute ? 'trainees' : 'staff',
+        exportFile: onTraineesRoute ? 'trainees.csv' : 'staff.csv'
+      }
     ));
   }
 
@@ -610,7 +616,8 @@
     main.appendChild(renderTable(
       ['Name', 'Region', 'Start', 'End', 'Courses', 'Participants', 'Author', 'Updated'],
       rows,
-      (i) => openCohortModal(sortedCohorts[i])
+      (i) => openCohortModal(sortedCohorts[i]),
+      { searchPlaceholder: 'Search cohorts… (' + rows.length + ')', tableKey: 'cohorts' }
     ));
   }
 
@@ -670,7 +677,8 @@
     main.appendChild(renderTable(
       ['Name', 'Cohort', 'Facilitators', 'Participants', 'Author', 'Updated'],
       rows,
-      (i) => openCourseModal(sortedGroups[i])
+      (i) => openCourseModal(sortedGroups[i]),
+      { searchPlaceholder: 'Search courses… (' + rows.length + ')', tableKey: 'courses' }
     ));
   }
 
@@ -705,7 +713,8 @@
     main.appendChild(renderTable(
       ['Name', 'Sex', 'Age', 'Course', 'Email', 'Phone', 'Updated'],
       rows,
-      (i) => openParticipantEditModal(sortedParts[i])
+      (i) => openParticipantEditModal(sortedParts[i]),
+      { searchPlaceholder: 'Search participants… (' + rows.length + ')', tableKey: 'participants' }
     ));
   }
 
@@ -735,7 +744,8 @@
     main.appendChild(renderTable(
       ['Date', 'Theme', 'Course', 'Location', 'Attendance', 'Author', 'Updated'],
       rows,
-      (i) => openSessionModal(sortedSessions[i])
+      (i) => openSessionModal(sortedSessions[i]),
+      { searchPlaceholder: 'Search sessions… (' + rows.length + ')', tableKey: 'sessions' }
     ));
   }
 
@@ -770,7 +780,8 @@
     main.appendChild(renderTable(
       ['Updated', 'Tag', 'Text', 'Consent', 'Media', 'Author'],
       rows,
-      (i) => openStoryModal(sortedStories[i])
+      (i) => openStoryModal(sortedStories[i]),
+      { searchPlaceholder: 'Search stories… (' + rows.length + ')', tableKey: 'stories' }
     ));
   }
 
@@ -891,13 +902,13 @@
           el('h3', null, 'By sex'),
           renderTable(['Sex', 'Count', '%'], Object.entries(dem.bySex).map(([k, n]) => [
             sexLabel[k] || k, n, demTotal ? Math.round(n*100/demTotal) + '%' : '—'
-          ]))
+          ]), null, { searchable: false })
         ]),
         el('div', { style: 'flex:1 1 200px' }, [
           el('h3', null, 'By age range'),
           renderTable(['Age', 'Count'], Object.entries(dem.byAgeRange).map(([k, n]) => [
             ageLabelOrDash(k), n
-          ]))
+          ]), null, { searchable: false })
         ])
       ])
     ]));
@@ -916,7 +927,9 @@
             d.cohorts.map((c) => [
               c.name, c.region || '—', c.groups, c.participants, c.sessions,
               c.attendanceN > 0 ? c.attendancePct + '%' : '—'
-            ])
+            ]),
+            null,
+            { searchPlaceholder: 'Filter cohorts… (' + d.cohorts.length + ')' }
           )
     ]));
 
@@ -1036,33 +1049,229 @@
    * @param {Array<Array<*>>} rows
    * @param {Function} [onRowClick]  fn(rowIndex) — when provided, rows become clickable
    */
-  function renderTable(headers, rows, onRowClick) {
+  function renderTable(headers, rows, onRowClick, opts) {
+    opts = opts || {};
+    const searchable = opts.searchable !== false;   // default: on
+    const sortable   = opts.sortable   !== false;   // default: on
+    const exportable = opts.exportable !== false;   // default: on
+    const placeholder = opts.searchPlaceholder || ('Search… (' + rows.length + ' rows)');
+    // sessionStorage-scoped state per table (search query + sort column/direction).
+    // When tableKey is null the table is ephemeral — state resets every render.
+    const tableKey  = opts.tableKey  || null;
+    const exportFile = opts.exportFile || (tableKey ? tableKey + '.csv' : 'table.csv');
+
+    const STATE_PREFIX = 'ubuntu3.adminTable.';
+    function readState() {
+      if (!tableKey) return {};
+      try { return JSON.parse(sessionStorage.getItem(STATE_PREFIX + tableKey) || '{}') || {}; }
+      catch (e) { return {}; }
+    }
+    function writeState(s) {
+      if (!tableKey) return;
+      try { sessionStorage.setItem(STATE_PREFIX + tableKey, JSON.stringify(s)); } catch (e) {}
+    }
+    const persisted = readState();
+
     const wrap = el('div', { class: 'table-wrap' });
     const tbl = el('table', { class: 'data' });
     const thead = el('thead'); const trh = el('tr');
-    headers.forEach((h) => trh.appendChild(el('th', null, h)));
+    // Sort state: { col, dir } or null (unsorted).
+    let sortState = persisted.sort && typeof persisted.sort.col === 'number' ? persisted.sort : null;
+    let applySort;   // forward-declared so the th click handlers can call it
+    headers.forEach((h, idx) => {
+      const th = el('th', { 'data-col': String(idx) }, h);
+      if (sortable) {
+        const indicator = el('span', { class: 'sort-indicator' }, '');
+        th.appendChild(document.createTextNode(' '));
+        th.appendChild(indicator);
+        th.style.cursor = 'pointer';
+        th.title = 'Click to sort';
+        th.addEventListener('click', () => {
+          // Cycle: unsorted → asc → desc → unsorted
+          if (!sortState || sortState.col !== idx) {
+            sortState = { col: idx, dir: 'asc' };
+          } else if (sortState.dir === 'asc') {
+            sortState = { col: idx, dir: 'desc' };
+          } else {
+            sortState = null;
+          }
+          applySort();
+          writeState(Object.assign({}, readState(), { sort: sortState }));
+        });
+      }
+      trh.appendChild(th);
+    });
     thead.appendChild(trh); tbl.appendChild(thead);
     const tbody = el('tbody');
+    const trList = [];
+    const textCache = [];
+    const colCache = [];     // per-row, per-column raw text — used by sort.
     rows.forEach((r, idx) => {
       const tr = el('tr');
       if (onRowClick) {
         tr.style.cursor = 'pointer';
         tr.addEventListener('click', (e) => {
-          // Don't fire when clicking an embedded button/link inside the row
           if (e.target.closest('button, a')) return;
           onRowClick(idx);
         });
       }
+      const textParts = [];
+      const rowCols = [];
       r.forEach((cell) => {
         if (cell instanceof Node) {
           const td = el('td'); td.appendChild(cell); tr.appendChild(td);
+          const txt = td.textContent || '';
+          textParts.push(txt); rowCols.push(txt);
         } else {
-          tr.appendChild(el('td', null, cell == null ? '' : String(cell)));
+          const s = cell == null ? '' : String(cell);
+          tr.appendChild(el('td', null, s));
+          textParts.push(s); rowCols.push(s);
         }
       });
       tbody.appendChild(tr);
+      trList.push(tr);
+      textCache.push(textParts.join(' ').toLowerCase());
+      colCache.push(rowCols);
     });
-    tbl.appendChild(tbody); wrap.appendChild(tbl); return wrap;
+    tbl.appendChild(tbody);
+
+    // ----- Sort implementation -----
+    // Smart comparator: numbers as numbers, percentages stripped of '%', empty
+    // cells (or '—') always sink to the bottom regardless of direction, the
+    // rest is case-insensitive locale text. Sorts in place by re-appending tr
+    // nodes in the chosen order.
+    function compareCells(a, b, dir) {
+      const aEmpty = !a || a === '—';
+      const bEmpty = !b || b === '—';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      const na = parseFloat(a.replace(/[%,]/g, ''));
+      const nb = parseFloat(b.replace(/[%,]/g, ''));
+      let cmp;
+      if (!isNaN(na) && !isNaN(nb) && /^\s*-?\d/.test(a) && /^\s*-?\d/.test(b)) {
+        cmp = na - nb;
+      } else {
+        cmp = a.toLowerCase().localeCompare(b.toLowerCase());
+      }
+      return dir === 'desc' ? -cmp : cmp;
+    }
+    applySort = function () {
+      const ths = trh.querySelectorAll('th');
+      ths.forEach((th, idx) => {
+        const ind = th.querySelector('.sort-indicator');
+        if (!ind) return;
+        if (sortState && sortState.col === idx) {
+          ind.textContent = sortState.dir === 'asc' ? '▲' : '▼';
+          th.classList.add('sorted');
+        } else {
+          ind.textContent = '';
+          th.classList.remove('sorted');
+        }
+      });
+      if (!sortState) {
+        trList.forEach((tr) => tbody.appendChild(tr));
+        return;
+      }
+      const { col, dir } = sortState;
+      const order = trList.map((_, i) => i);
+      order.sort((i, j) => compareCells(colCache[i][col] || '', colCache[j][col] || '', dir));
+      order.forEach((i) => tbody.appendChild(trList[i]));
+    };
+    if (sortable && sortState) applySort();
+
+    // ----- Toolbar: search input + counter + optional Export CSV -----
+    if ((searchable || exportable) && rows.length > 0) {
+      const countEl = el('span', {
+        class: 'small muted',
+        style: 'margin-left:10px; white-space:nowrap'
+      }, rows.length + ' / ' + rows.length);
+
+      let search = null;
+      if (searchable) {
+        search = el('input', {
+          type: 'search',
+          placeholder,
+          autocomplete: 'off',
+          spellcheck: 'false',
+          style: 'flex:1; min-width:0; padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px'
+        });
+        if (persisted.q) search.value = persisted.q;
+      }
+
+      function applyFilter() {
+        const q = search ? (search.value || '').trim().toLowerCase() : '';
+        let shown = 0;
+        for (let i = 0; i < trList.length; i++) {
+          const hit = q === '' || textCache[i].indexOf(q) !== -1;
+          trList[i].style.display = hit ? '' : 'none';
+          if (hit) shown++;
+        }
+        countEl.textContent = shown + ' / ' + rows.length;
+        if (search) writeState(Object.assign({}, readState(), { q: search.value || '' }));
+      }
+
+      if (search) {
+        ['input', 'keyup', 'change', 'search'].forEach((evt) => {
+          search.addEventListener(evt, applyFilter);
+        });
+        search.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && search.value !== '') {
+            search.value = '';
+            applyFilter();
+            e.stopPropagation();
+          }
+        });
+      }
+
+      let exportBtn = null;
+      if (exportable) {
+        exportBtn = el('button', {
+          class: 'btn btn--sm btn--ghost no-print',
+          type: 'button',
+          title: 'Download the currently visible rows as CSV',
+          onClick: () => {
+            // Iterate tbody.children in current DOM order to preserve any active sort.
+            const csvLines = [headers.map(csvEscape).join(',')];
+            Array.from(tbody.children).forEach((tr) => {
+              if (tr.style.display === 'none') return;
+              const i = trList.indexOf(tr);
+              if (i >= 0) csvLines.push(colCache[i].map(csvEscape).join(','));
+            });
+            const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = exportFile;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+          }
+        }, '⤓ CSV');
+      }
+
+      const barChildren = [];
+      if (search)    barChildren.push(search);
+      barChildren.push(countEl);
+      if (exportBtn) barChildren.push(exportBtn);
+      const bar = el('div', {
+        class: 'table-search',
+        style: 'display:flex; align-items:center; gap:8px; margin:0 0 8px 0'
+      }, barChildren);
+      wrap.appendChild(bar);
+
+      // Re-apply persisted search filter on first render.
+      if (search && search.value) applyFilter();
+    }
+
+    wrap.appendChild(tbl);
+    return wrap;
+  }
+
+  /** RFC 4180 CSV escape: wrap in quotes if it contains ", , \n, or ;. */
+  function csvEscape(v) {
+    if (v == null) return '';
+    const s = String(v);
+    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
   }
   function groupBy(arr, key) {
     const m = new Map();

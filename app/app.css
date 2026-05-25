@@ -49,13 +49,16 @@ body {
 .app-header__title {
   flex: 1;
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 800;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Forward-nav button hidden for now — trainers asked for Back only.
+   The JS that powers it stays in place; only the visual is suppressed. */
+#nav-fwd-btn { display: none !important; }
 .app-header__status { display: flex; align-items: center; gap: 10px; }
 .icon-btn {
   background: transparent;
@@ -71,7 +74,10 @@ body {
 .icon-btn:active { background: rgba(255,255,255,.15); }
 .net-dot {
   width: 10px; height: 10px; border-radius: 50%;
-  background: #fff;
+  /* Green when online — reads as a familiar "good signal" cue on the
+     red header. Falls back to a hex value in case --success isn't
+     loaded yet during the first paint. */
+  background: var(--success, #2D8659);
   box-shadow: 0 0 0 2px rgba(255,255,255,.4);
   display: inline-block;
 }
@@ -126,14 +132,21 @@ body {
 }
 .bell-btn:hover,
 .bell-btn:active { background: rgba(255,255,255,.28); }
+/* Notification badge — sits on the bell with the count of unseen
+   Moodle items. Auto-sizes to the digits inside; goes round when
+   there's a single character, pill-shaped for 2-3 chars. */
 .bell-dot {
   position: absolute;
-  top: 4px; right: 4px;
-  width: 10px; height: 10px;
+  top: -4px; right: -4px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
   background: #FFD43B;
+  color: var(--brand-dark);
   border-radius: 999px;
   box-shadow: 0 0 0 2px var(--brand);
   pointer-events: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; line-height: 1; font-weight: 800;
 }
 .bell-btn[data-count="0"] .bell-dot { display: none; }
 .sync-btn[data-state="error"]    { background: rgba(255,255,255,.18); color: #FFD0CE; }
@@ -172,6 +185,10 @@ body {
 }
 .lang-btn:active { background: rgba(255,255,255,.28); }
 .lang-btn[aria-expanded="true"] { background: rgba(255,255,255,.28); }
+/* Author display:inline-flex above wins over the browser default
+   [hidden] { display: none }, so the hidden attribute alone wouldn't
+   work — be explicit. Used when the header lang button is hidden. */
+.lang-btn[hidden] { display: none; }
 .lang-btn__code { line-height: 1; }
 
 .lang-menu {
@@ -237,7 +254,11 @@ body {
   background: #fff;
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* Default to the maximum number of tabs we ship (Dashboard, Sessions,
+     Stories, Courses, Cohorts, Reports, More). applyTabVisibility()
+     overrides this inline with the count of visible tabs so the bar
+     redistributes evenly when one is hidden. */
+  grid-template-columns: repeat(7, 1fr);
   z-index: 9;
 }
 .tab {
@@ -251,6 +272,10 @@ body {
 }
 .tab[aria-current="page"] { color: var(--brand); }
 .tab span { line-height: 1; }
+/* Without this rule the .tab class wins over the browser's default
+   [hidden] { display: none }, so a hidden tab would still render as a
+   flex column. Needed by SETTINGS.chromeCfg → applyTabVisibility. */
+.tab[hidden] { display: none; }
 
 /* ---------- typography & utility ---------- */
 h2 { font-size: 20px; margin: 8px 0 12px; }
@@ -306,10 +331,29 @@ p { margin: 6px 0; }
 }
 .card__title { font-weight: 600; font-size: 16px; margin: 0 0 4px; }
 .card__sub { color: var(--muted); font-size: 13px; }
+/* Accent variant — light brand-tinted header card used on
+   Course / Cohort / Session detail pages so the top card stands out
+   from the lists below it. */
+.card--accent {
+  background: var(--brand-tint);
+  border-color: rgba(183, 59, 63, 0.22);
+}
+.card--accent .card__title { color: var(--brand-dark); }
 .card-link {
   display: block; text-decoration: none; color: inherit;
 }
 .card-link:active .card { background: #FAFAFA; }
+
+/* Dashboard greeting — bigger than a generic .small muted line so the
+   trainer's name lands as a personal cue, while keeping the snapshot
+   sentence next to it. <strong> inside picks up the brand colour. */
+.dash-hello {
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--text);
+  margin: 4px 0 14px;
+}
+.dash-hello strong { color: var(--brand-dark); font-weight: 700; }
 
 /* dashboard KPIs */
 .kpis {
@@ -662,6 +706,210 @@ p { margin: 6px 0; }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
   outline: none; border-color: var(--brand);
 }
+
+/* Password field + eye-toggle. The wrapper layouts the input full-width
+   and overlays a transparent button at the right edge. The input keeps
+   its native styling (border, padding) but adds extra right padding so
+   the typed characters never collide with the eye glyph. */
+.pw-wrap {
+  position: relative;
+  display: block;
+}
+.pw-wrap input {
+  width: 100%;
+  padding: 12px 44px 12px 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+}
+.pw-wrap input:focus { outline: none; border-color: var(--brand); }
+.pw-toggle {
+  position: absolute;
+  top: 50%; right: 4px;
+  transform: translateY(-50%);
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0;
+}
+.pw-toggle:hover  { color: var(--brand); background: var(--brand-tint); }
+.pw-toggle:active { color: var(--brand-dark); }
+.pw-toggle svg { width: 22px; height: 22px; }
+
+/* v0.3.7 — rich-text editor for story.text */
+.rt-wrapper {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.rt-toolbar {
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 6px;
+  background: #FBF9F8;
+  border-bottom: 1px solid var(--border);
+}
+.rt-tb-btn {
+  background: transparent; border: 0;
+  min-width: 32px; height: 32px;
+  padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 14px; font-weight: 600;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rt-tb-btn:hover  { background: var(--brand-tint, #F7E9E9); }
+.rt-tb-btn:active { background: #F0D5D5; }
+.rt-tb-btn.rt-active {
+  background: var(--brand-tint, #F7E9E9);
+  color: var(--brand);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+.rt-tb-sep {
+  display: inline-block;
+  width: 1px; height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.rt-tb-icon { color: var(--muted); }
+.rt-tb-icon:hover { color: var(--text); }
+.rt-tb-icon svg { display: block; }
+.rt-tb-color { position: relative; }
+.rt-tb-color-swatch {
+  display: inline-block;
+  width: 12px; height: 4px;
+  border-radius: 2px;
+  margin-left: 1px;
+  background: #1B1B1B;
+}
+.rt-editor {
+  min-height: 120px;
+  padding: 10px 12px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--text);
+  outline: none;
+}
+.rt-editor:focus { box-shadow: inset 0 0 0 2px var(--brand-tint, #F7E9E9); }
+.rt-editor[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+.rt-editor p   { margin: 0 0 8px; }
+.rt-editor ul,
+.rt-editor ol  { margin: 4px 0 8px; padding-left: 22px; }
+.rt-editor li  { margin-bottom: 2px; }
+.rt-editor img { max-width: 100%; height: auto; border-radius: 8px; margin: 6px 0; }
+.rt-editor a   { color: var(--brand); text-decoration: underline; }
+
+/* ---------- list search bar (iOS Calls-screen style pill) ---------- */
+.list-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 12px;
+}
+.list-search-pill {
+  flex: 1; min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ECECEE;
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: text;
+}
+.list-search-glass {
+  width: 16px; height: 16px;
+  flex: none;
+  color: var(--muted);
+}
+.list-search-input {
+  flex: 1; min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 16px;        /* 16px so iOS doesn't zoom in on focus */
+  color: var(--text);
+  padding: 0;
+  appearance: none;
+}
+.list-search-input::placeholder {
+  color: var(--muted);
+}
+/* Hide native clear / cancel buttons of type="search" — we use our own keys */
+.list-search-input::-webkit-search-decoration,
+.list-search-input::-webkit-search-cancel-button,
+.list-search-input::-webkit-search-results-button,
+.list-search-input::-webkit-search-results-decoration { display: none; }
+.list-search-counter { white-space: nowrap; }
+.list-search-pill:focus-within {
+  background: #E2E2E5;
+}
+
+/* ---------- action circles (iOS Calls-style row under search) ---------- */
+.action-circles {
+  display: flex;
+  /* Right-justify so the row hugs the trailing edge of the screen
+     and lines up with the action buttons on the rest of the app
+     (Edit, + buttons, etc., that all sit on the right). When there
+     are enough circles to overflow, scroll left and they read
+     naturally as 1, 2, 3, … from right edge to left. */
+  justify-content: flex-end;
+  gap: 18px;
+  padding: 6px 2px 16px;
+  margin: 0 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.action-circles::-webkit-scrollbar { display: none; }
+.action-circle {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  width: 64px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+}
+.action-circle__icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: #ECECEE;
+  color: var(--brand);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s;
+}
+.action-circle__icon svg { width: 22px; height: 22px; }
+.action-circle:hover .action-circle__icon { background: var(--brand-tint); }
+.action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
+.action-circle[disabled] { opacity: .5; pointer-events: none; }
+.action-circle__label {
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 76px;
+}
 .checkbox {
   display: flex; align-items: center; gap: 8px;
 }
@@ -746,6 +994,44 @@ p { margin: 6px 0; }
   flex-shrink: 0;
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Icon-only thumb used on list rows that don't have a photo. Mirrors the
+   tab-bar glyph so each list visually maps to its tab. */
+.thumb--icon {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.thumb--icon svg { width: 30px; height: 30px; }
+
+/* card variant that lays its children out in a row so a thumb can sit
+   next to the title/sub block on Cohort / Course / Session list rows. */
+.card.card--row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card.card--row > .grow { min-width: 0; }
+
+/* Section heading with a leading SVG icon — used on Attendance, the
+   Participants/Sessions sub-headings inside a course, and the Courses
+   sub-heading inside a cohort. Tone of the icon matches the brand red
+   so the heading visually pairs with its detail card above. */
+.section-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+.section-h__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.section-h__icon svg { width: 22px; height: 22px; }
+.section-h__text { line-height: 1.2; }
+.section-h__row .section-h { margin: 0; }
 
 /* ---------- pills ---------- */
 .pill {

@@ -1,6 +1,8 @@
-# Production secrets / configs
+# Production secrets / configs — never commit the live config.
 server/config.php
+# Local working copies (but DO commit the *.example.php templates).
 *.local.php
+!*.local.example.php
 
 # Test environment
 tests/.env
@@ -34,3 +36,9 @@ node_modules/
 # Logs
 *.log
 storage/
+
+# Personal / per-machine CA bundles dropped into the local PHP container
+# (e.g. corporate Zscaler root from `security find-certificate`). Never
+# commit — these are device-specific and may contain corporate secrets.
+docker/zscaler.crt
+docker/all-roots.crt
