@@ -967,6 +967,45 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* Reports → "Participants to complete" — tappable summary that
+   expands into an inline sex/age editor. Designed so the trainer can
+   fix the data without ever leaving the Reports tab. */
+.reports-missing-list { display: flex; flex-direction: column; gap: 0; }
+.missing-row { margin-bottom: 8px; }
+.missing-row__summary {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.missing-row__summary .list-item { margin-bottom: 0; }
+.missing-row__chev {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: transform .15s;
+}
+.missing-row__chev svg { width: 18px; height: 18px; }
+.missing-row.is-open .missing-row__chev { transform: rotate(90deg); }
+.missing-row__editor {
+  background: var(--brand-tint);
+  border: 1px solid rgba(183, 59, 63, 0.18);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  padding: 12px;
+  margin-top: -1px;  /* tuck under the summary's border */
+}
+.missing-row.is-open .list-item {
+  border-radius: 12px 12px 0 0;
+  border-bottom: 0;
+}
+
 /* Recording state — used while holding the Voice circle on session
    detail. The icon disc pulses and turns brand-red so the trainer
    gets clear visual feedback that audio capture is live. */

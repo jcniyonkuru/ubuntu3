@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.9';
+  const APP_VERSION = '0.3.8-dev.10';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -3234,42 +3234,123 @@
       .filter((p) => !p.sex || !p.ageRange)
       .sort((a, b) => ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
 
+    // Live count subtitle so we can decrement it as rows are fixed.
+    const missingCountSub = el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'));
     const missingCard = el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
         el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.warning }),
         el('div', { class: 'grow', style: 'min-width:0' }, [
           el('div', { class: 'card__title' }, t('reports.missingTitle')),
-          el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'))
+          missingCountSub
         ])
       ])
     ]);
     root.appendChild(missingCard);
 
-    if (participants.length) {
-      participants.forEach((p) => {
+    // Container for missing-demographics rows so we can drop "all clear"
+    // copy in when the last row is fixed, and refresh the count card.
+    const missingList = el('div', { class: 'reports-missing-list' });
+    const missingNone = el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone'));
+    root.appendChild(missingList);
+    if (!participants.length) {
+      missingList.appendChild(missingNone);
+    }
+
+    function refreshMissingCount() {
+      const live = missingList.querySelectorAll('.missing-row').length;
+      missingCountSub.textContent = tn(live, 'reports.missingCountOne', 'reports.missingCountOther', { n: live });
+      if (live === 0 && !missingList.contains(missingNone)) {
+        missingList.appendChild(missingNone);
+      }
+    }
+
+    participants.forEach((p) => {
+      // ---- summary (the tappable row) ----
+      const title = el('div', { class: 'list-item__title' }, [
+        document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+        p.source === 'moodle'
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          : null
+      ]);
+      const missingText = () => {
         const missing = [
           !p.sex      ? t('common.sex')      : null,
           !p.ageRange ? t('common.ageRange') : null
         ].filter(Boolean).join(' · ');
-        const title = el('div', { class: 'list-item__title' }, [
-          document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
-          p.source === 'moodle'
-            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
-            : null
-        ]);
-        root.appendChild(el('a', { class: 'card-link', href: `#/participants/${p.id}/edit` }, [
-          el('div', { class: 'list-item' }, [
-            thumbIcon('participants'),
-            el('div', { class: 'grow' }, [
-              title,
-              el('div', { class: 'list-item__sub' }, [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · '))
-            ])
-          ])
-        ]));
+        return [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · ');
+      };
+      const sub = el('div', { class: 'list-item__sub' }, missingText());
+      const chev = el('span', { class: 'missing-row__chev', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>' });
+      const summary = el('button', { type: 'button', class: 'missing-row__summary' }, [
+        el('div', { class: 'list-item' }, [
+          thumbIcon('participants'),
+          el('div', { class: 'grow' }, [title, sub]),
+          chev
+        ])
+      ]);
+
+      // ---- inline editor (hidden by default, expands on tap) ----
+      const sexSel = selectEl('sex',
+        [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))),
+        p.sex || '');
+      const ageSel = selectEl('ageRange',
+        [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))),
+        p.ageRange || '');
+      const saveBtn = el('button', { class: 'btn btn--sm', type: 'button' }, t('common.save'));
+      const cancelBtn = el('button', { class: 'btn btn--sm btn--ghost', type: 'button' }, t('common.cancel'));
+      const editor = el('div', { class: 'missing-row__editor', hidden: true }, [
+        el('div', { class: 'row', style: 'gap:12px' }, [
+          el('div', { class: 'grow' }, fg(t('common.sex'), sexSel)),
+          el('div', { class: 'grow' }, fg(t('common.ageRange'), ageSel))
+        ]),
+        el('div', { class: 'row', style: 'gap:8px; justify-content:flex-end; margin-top:8px' }, [cancelBtn, saveBtn])
+      ]);
+      function refreshSaveState() {
+        // Both must be filled before the row can vanish; otherwise stay open.
+        saveBtn.disabled = !sexSel.value || !ageSel.value;
+      }
+      sexSel.addEventListener('change', refreshSaveState);
+      ageSel.addEventListener('change', refreshSaveState);
+      refreshSaveState();
+
+      summary.addEventListener('click', () => {
+        const opening = editor.hidden;
+        editor.hidden = !opening;
+        row.classList.toggle('is-open', opening);
       });
-    } else {
-      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone')));
-    }
+      cancelBtn.addEventListener('click', () => {
+        sexSel.value = p.sex || '';
+        ageSel.value = p.ageRange || '';
+        refreshSaveState();
+        editor.hidden = true;
+        row.classList.remove('is-open');
+      });
+      saveBtn.addEventListener('click', async () => {
+        p.sex      = sexSel.value || p.sex;
+        p.ageRange = ageSel.value || p.ageRange;
+        try {
+          await DB.put('participants', p, CURRENT_AUTHOR.id);
+        } catch (err) {
+          console.error('[ubuntu30 reports] participant save failed', err);
+          toast((err && err.message) || t('common.error'));
+          return;
+        }
+        toast(t('reports.missingFixedToast', { name: ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName') }));
+        if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+        // Both filled → row disappears from the report.
+        if (p.sex && p.ageRange) {
+          row.remove();
+          refreshMissingCount();
+        } else {
+          // Partial save (e.g. only sex now filled) — keep open and
+          // update the missing-fields line.
+          sub.textContent = missingText();
+        }
+      });
+
+      const row = el('div', { class: 'missing-row' }, [summary, editor]);
+      missingList.appendChild(row);
+    });
 
     // ----- Card 2: stories that ship to the public feed -----
     // publishable=true implies consent=true (the story form forces that),
