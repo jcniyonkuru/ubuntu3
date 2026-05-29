@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.15';
+  const APP_VERSION = '0.3.8-dev.16';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -3917,6 +3917,35 @@
     // v0.3.7 — long story text is now rich-text. Stores HTML in story.text.
     const rtEditor = buildRichTextEditor(story.text || '', { placeholder: t('story.textPh') });
 
+    // v0.3.8 — Story starter prompts. Only on a fresh, empty story so
+    // an editor reopening a saved one doesn't get unexpected
+    // suggestions. Picks 3 random prompts from the i18n pool; tapping
+    // one inserts it as the opening sentence and dismisses the card.
+    const STORY_PROMPT_POOL = 8;
+    let promptsCard = null;
+    if (!isEdit && !(story.text || '').trim()) {
+      const picks = [];
+      while (picks.length < 3 && picks.length < STORY_PROMPT_POOL) {
+        const n = Math.floor(Math.random() * STORY_PROMPT_POOL) + 1;
+        if (picks.indexOf(n) === -1) picks.push(n);
+      }
+      promptsCard = el('div', { class: 'story-prompts' }, [
+        el('div', { class: 'story-prompts__title' }, t('story.promptsTitle')),
+        el('p', { class: 'story-prompts__intro' }, t('story.promptsIntro')),
+        el('div', { class: 'story-prompts__list' }, picks.map((i) => {
+          const text = t('story.prompt.' + i);
+          return el('button', {
+            type: 'button',
+            class: 'story-prompt-chip',
+            onClick: () => {
+              rtEditor.setText(text);
+              if (promptsCard) promptsCard.hidden = true;
+            }
+          }, text);
+        }))
+      ]);
+    }
+
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
       story.text = rtEditor.getHtml();
@@ -3943,6 +3972,7 @@
       go('/stories');
     } }, [
       fg(t('story.textLabel'), rtEditor.wrapper),
+      promptsCard,
       fg(t('story.photoLabel'), el('div', { class: 'row', style: 'gap:12px; align-items:center' }, [
         photoPreview,
         el('label', { class: 'btn btn--sm btn--soft' }, [
@@ -4879,7 +4909,24 @@
       return html;
     }
 
-    return { wrapper, getHtml, focus: () => editor.focus() };
+    // v0.3.8 — setText injects a plain-text starter sentence (wrapping
+    // it in a paragraph) and places the caret at the end so the
+    // trainer can keep typing. Used by the story prompts hint.
+    function setText(text) {
+      const safe = String(text || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      editor.innerHTML = '<p>' + safe + ' </p>';
+      editor.focus();
+      // Move caret to the end
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    return { wrapper, getHtml, focus: () => editor.focus(), setText, editor };
   }
 
   /** Strip HTML tags from a string — used in list previews + dashboard cards. */
