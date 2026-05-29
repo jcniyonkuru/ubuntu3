@@ -967,6 +967,15 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* At-risk pill — surfaces participants with 3+ consecutive recorded
+   absences so M&E coordinators can follow up before they drop. Warm
+   amber so it reads as a 'careful' cue, not a hard error. */
+.pill--at-risk {
+  background: #FFE7B3;
+  color: #7A4F00;
+  font-weight: 600;
+}
+
 /* Duplicate-name warning that appears under the + Create new person
    form when the typed name closely matches someone already enrolled. */
 .dup-suggestion {
