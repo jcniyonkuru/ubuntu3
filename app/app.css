@@ -967,6 +967,44 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* v0.3.8 — Story starter prompts. Sit right below the rich-text
+   editor on a new (blank) story form; tapping a chip injects it as
+   the opening sentence and the card hides. */
+.story-prompts {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: #FFF7E5;
+  border: 1px dashed #E8C97A;
+  border-radius: 10px;
+}
+.story-prompts__title {
+  font-weight: 700;
+  color: #8C5A00;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.story-prompts__intro {
+  font-size: 13px;
+  color: #7A4F00;
+  margin: 0 0 10px;
+}
+.story-prompts__list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.story-prompt-chip {
+  text-align: left;
+  background: #fff;
+  border: 1px solid #E8C97A;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .12s;
+}
+.story-prompt-chip:hover  { background: #FFF1CC; }
+.story-prompt-chip:active { background: #FFE8AA; }
+
 /* v0.3.8 — Attendance trend chart on the course detail page. Tiny
    hand-rolled SVG sized to flex with the card width on mobile. */
 .trend-card { margin-bottom: 14px; }
