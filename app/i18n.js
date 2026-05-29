@@ -264,6 +264,12 @@
       'group.trendTitle': 'Présence — évolution',
       'group.trendAvg': 'Moyenne : {avg}% de présence',
       'group.trendAria': 'Évolution du taux de présence dans le temps',
+      'csv.attendanceCta': "Exporter présences (CSV)",
+      'csv.storiesCta': 'Exporter récits (CSV)',
+      'csv.attendanceDone': '{n} ligne(s) exportées dans la présence.',
+      'csv.storiesDone': '{n} récit(s) exporté(s).',
+      'csv.yes': 'Oui',
+      'csv.no': 'Non',
 
       // Participant
       'p.newTitle': 'Nouveau participant',
@@ -786,6 +792,12 @@
       'group.trendTitle': 'Attendance trend',
       'group.trendAvg': 'Average attendance: {avg}%',
       'group.trendAria': 'Attendance percentage over time',
+      'csv.attendanceCta': 'Export attendance (CSV)',
+      'csv.storiesCta': 'Export stories (CSV)',
+      'csv.attendanceDone': '{n} attendance row(s) exported.',
+      'csv.storiesDone': '{n} story row(s) exported.',
+      'csv.yes': 'Yes',
+      'csv.no': 'No',
 
       'p.newTitle': 'New participant',
       'p.editTitle': 'Edit participant',
@@ -1304,6 +1316,12 @@
       'group.trendTitle': "Ihagaze ry'abitabira",
       'group.trendAvg': 'Impuzandengo: {avg}%',
       'group.trendAria': "Ihindagurika ry'abitabira mu nyigisho",
+      'csv.attendanceCta': "Sohora abitabira (CSV)",
+      'csv.storiesCta': "Sohora inkuru (CSV)",
+      'csv.attendanceDone': "Imirongo {n} y'abitabira yasohowe.",
+      'csv.storiesDone': "Inkuru {n} zasohowe.",
+      'csv.yes': "Ego",
+      'csv.no': "Oya",
 
       'p.newTitle': 'Uwitabira mushasha',
       'p.editTitle': 'Hindura uwitabira',
