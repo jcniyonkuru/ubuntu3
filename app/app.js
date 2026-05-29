@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.14';
+  const APP_VERSION = '0.3.8-dev.15';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1971,6 +1971,31 @@
       else sessSection.appendChild(sessActions);
     }
     root.appendChild(sessSection);
+
+    // v0.3.8 — PWA-side CSV export. Two compact buttons at the bottom
+    // of the course so trainers can hand a donor an attendance roster
+    // or a stories digest on the spot. Loaded data is reused — we
+    // only fetch the per-course stories here.
+    const flatAttendance = [];
+    courseAtt.forEach((m, partId) => {
+      m.forEach((rec) => flatAttendance.push(rec));
+    });
+    const courseStories = (await DB.all('stories')).filter((s) =>
+      (s.sessionId && sessions.some((x) => x.id === s.sessionId)) ||
+      (s.participantId && participants.some((x) => x.id === s.participantId))
+    );
+    root.appendChild(el('div', {
+      class: 'row', style: 'gap:8px; margin-top:16px; flex-wrap:wrap'
+    }, [
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => exportCourseAttendanceCsv(group, participants, sessionsAsc, flatAttendance)
+      }, t('csv.attendanceCta')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => exportCourseStoriesCsv(group, sessionsAsc, participants, courseStories)
+      }, t('csv.storiesCta'))
+    ]));
   }
 
   // ---------- All Groups (flat list across cohorts) ----------
@@ -5036,6 +5061,99 @@
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
   }
+  // v0.3.8 — Per-course CSV exports for trainers in the field. Built
+  // from the local IndexedDB so they work offline (e.g. on a donor
+  // visit). File name carries the course name so trainers can hand
+  // multiple files to the same donor without confusion.
+
+  /** Slugify a course name for a filename. ASCII-safe; falls back to "course". */
+  function slugifyForFile(s) {
+    return (s || 'course').toString().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'course';
+  }
+
+  /** Yes/No localiser for booleans in CSVs — easier for non-technical readers. */
+  function csvBool(v) {
+    return v ? t('csv.yes') : t('csv.no');
+  }
+
+  /** Build + download an attendance CSV: one row per (participant × session). */
+  async function exportCourseAttendanceCsv(group, participants, sessionsAsc, attendance) {
+    const rows = [];
+    const sessAtt = (sid) => attendance.filter((a) => a.sessionId === sid);
+    sessionsAsc.forEach((s) => {
+      const sa = sessAtt(s.id);
+      // Roster scoped to this session: regular enrolees + any walk-ins
+      // recorded for THIS session (walk-ins from other sessions are
+      // intentionally excluded).
+      const roster = participants
+        .filter((p) => !p.walkInSessionId || p.walkInSessionId === s.id);
+      roster.forEach((p) => {
+        const rec = sa.find((a) => a.participantId === p.id);
+        rows.push({
+          session_date:    s.date || '',
+          session_theme:   s.theme || '',
+          session_location: s.location || '',
+          first_name:      p.firstName || '',
+          last_name:       p.lastName || '',
+          sex:             p.sex || '',
+          age_range:       p.ageRange || '',
+          contact:         p.contact || '',
+          walk_in:         csvBool(!!p.walkInSessionId),
+          present:         csvBool(!!(rec && rec.present)),
+          recorded:        csvBool(!!rec)
+        });
+      });
+    });
+    const csv = toCsv(rows, [
+      'session_date', 'session_theme', 'session_location',
+      'first_name', 'last_name', 'sex', 'age_range', 'contact',
+      'walk_in', 'present', 'recorded'
+    ]);
+    // BOM prepended so Excel opens the file as UTF-8 by default.
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob('attendance-' + slugifyForFile(group.name) + '.csv', blob);
+    toast(t('csv.attendanceDone', { n: rows.length }));
+  }
+
+  /** Build + download a stories CSV for this course. */
+  async function exportCourseStoriesCsv(group, sessionsAsc, participants, stories) {
+    const sessIds = new Set(sessionsAsc.map((s) => s.id));
+    const partIds = new Set(participants.map((p) => p.id));
+    const sessTheme = (sid) => (sessionsAsc.find((x) => x.id === sid) || {}).theme || '';
+    const sessDate  = (sid) => (sessionsAsc.find((x) => x.id === sid) || {}).date || '';
+    const partName  = (pid) => {
+      const p = participants.find((x) => x.id === pid);
+      if (!p) return '';
+      return ((p.firstName || '') + ' ' + (p.lastName || '')).trim();
+    };
+    const scoped = stories.filter((s) =>
+      (s.sessionId && sessIds.has(s.sessionId)) ||
+      (s.participantId && partIds.has(s.participantId))
+    );
+    const rows = scoped.map((s) => ({
+      created_at:     s.createdAt || s.updatedAt || '',
+      session_date:   s.sessionId ? sessDate(s.sessionId) : '',
+      session_theme:  s.sessionId ? sessTheme(s.sessionId) : '',
+      participant:    s.participantId ? partName(s.participantId) : '',
+      text:           stripHtml(s.text || ''),
+      consent:        csvBool(s.consent),
+      publishable:    csvBool(s.publishable),
+      has_photo:      csvBool(s.hasPhoto || !!s.photo),
+      has_audio:      csvBool(s.hasAudio || !!s.audio),
+    }));
+    const csv = toCsv(rows, [
+      'created_at', 'session_date', 'session_theme', 'participant',
+      'text', 'consent', 'publishable', 'has_photo', 'has_audio'
+    ]);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob('stories-' + slugifyForFile(group.name) + '.csv', blob);
+    toast(t('csv.storiesDone', { n: rows.length }));
+  }
+
   async function exportCsv(storeName) {
     const COLUMN_MAP = {
       cohorts: ['id', 'name', 'region', 'startDate', 'endDate', 'createdAt', 'updatedAt', 'authorId'],
