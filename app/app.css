@@ -967,6 +967,108 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* v0.3.8 — Participant attendance certificate. Paint as a centred A4
+   sheet on screen; the print stylesheet at the bottom of this file
+   strips the app chrome so the trainer's browser can save it as PDF. */
+.certificate-page {
+  max-width: 760px;
+  margin: 16px auto 32px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 36px 44px 28px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.06);
+  position: relative;
+  color: var(--text);
+}
+.cert-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+  margin-bottom: 18px;
+}
+.cert-brand {
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 2px solid var(--brand);
+  padding-bottom: 14px; margin-bottom: 22px;
+}
+.cert-brand__logo { width: 64px; height: 64px; object-fit: contain; }
+.cert-brand__name {
+  font-size: 18px; font-weight: 700;
+  color: var(--brand);
+  letter-spacing: .5px;
+}
+.cert-title {
+  text-align: center; margin: 8px 0 4px;
+  font-size: 28px; font-weight: 800;
+  color: var(--brand-dark);
+  letter-spacing: 1px;
+}
+.cert-intro {
+  text-align: center; margin: 0 0 4px;
+  color: var(--muted); font-size: 14px;
+}
+.cert-name {
+  text-align: center; margin: 16px 0 18px;
+  font-size: 30px; font-weight: 700;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+.cert-body, .cert-stats {
+  text-align: center; line-height: 1.55;
+  font-size: 16px; margin: 8px auto 6px;
+  max-width: 560px;
+}
+.cert-list-title {
+  margin: 22px 0 6px;
+  font-size: 14px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--muted);
+}
+.cert-session-list {
+  margin: 0; padding-left: 18px;
+  font-size: 14px;
+  column-count: 2; column-gap: 24px;
+}
+.cert-session-list li { break-inside: avoid; margin-bottom: 4px; }
+.cert-sign {
+  display: flex; gap: 24px; justify-content: space-between;
+  margin-top: 36px;
+}
+.cert-sign__col { flex: 1; }
+.cert-sign__line {
+  border-bottom: 1px solid var(--text);
+  padding-bottom: 4px; min-height: 28px;
+  text-align: center;
+}
+.cert-sign__label {
+  text-align: center; color: var(--muted); font-size: 12px;
+  margin-top: 4px;
+}
+@media (max-width: 600px) {
+  .certificate-page { padding: 22px 18px; margin: 8px 0 24px; }
+  .cert-name { font-size: 22px; }
+  .cert-title { font-size: 22px; }
+  .cert-session-list { column-count: 1; }
+}
+/* Print: take over the whole page, strip the app shell. The
+   certificate-mode class on body is added/removed by certificateView. */
+@media print {
+  body.certificate-mode .app-header,
+  body.certificate-mode .tabbar,
+  body.certificate-mode .toast,
+  body.certificate-mode .no-print { display: none !important; }
+  body.certificate-mode {
+    background: #fff;
+    padding-bottom: 0;
+  }
+  body.certificate-mode .view { padding: 0; }
+  .certificate-page {
+    margin: 0; box-shadow: none;
+    border: 0; border-radius: 0;
+    max-width: 100%;
+    padding: 0;
+  }
+}
+
 /* At-risk pill — surfaces participants with 3+ consecutive recorded
    absences so M&E coordinators can follow up before they drop. Warm
    amber so it reads as a 'careful' cue, not a hard error. */

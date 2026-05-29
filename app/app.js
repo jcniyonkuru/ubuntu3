@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.12';
+  const APP_VERSION = '0.3.8-dev.13';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -2305,6 +2305,109 @@
     root.appendChild(dupPanel);
   }
 
+  // v0.3.8 — Participant attendance certificate. Print-friendly route
+  // mounted at /participants/:id/certificate. Trainer taps "Generate
+  // certificate" on the participant edit form, browser print dialog
+  // saves it as a PDF. Stays useable offline because everything is
+  // computed from the local IndexedDB.
+  async function certificateView(params, root) {
+    const p = await DB.get('participants', params.id);
+    if (!p) { root.appendChild(notFoundView()); return; }
+    const group = await DB.get('groups', p.groupId);
+    if (!group) { root.appendChild(notFoundView()); return; }
+    const cohort = group.cohortId ? await DB.get('cohorts', group.cohortId) : null;
+    setTitle(t('cert.title'));
+
+    // Build the attended-sessions list. Walk-ins excluded (they're
+    // session-scoped, not a course attendance record).
+    const allSessions = (await DB.byIndex('sessions', 'groupId', group.id))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const myAttendance = (await DB.byIndex('attendance', 'participantId', p.id))
+      .filter((a) => !a.walkIn);
+    const presentByDate = myAttendance.filter((a) => a.present);
+    const presentSessions = allSessions.filter((s) =>
+      presentByDate.some((a) => a.sessionId === s.id));
+
+    const fullName = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName');
+    const startDate = allSessions.length ? allSessions[0].date : null;
+    const endDate   = allSessions.length ? allSessions[allSessions.length - 1].date : null;
+    const todayStr  = formatDate(new Date().toISOString());
+
+    // Toggle a body-level class so the print stylesheet hides the
+    // app header / tab bar. Cleared on the next route change so the
+    // rest of the app keeps its chrome.
+    document.body.classList.add('certificate-mode');
+    const cleanup = () => document.body.classList.remove('certificate-mode');
+    window.addEventListener('hashchange', cleanup, { once: true });
+
+    const page = el('div', { class: 'certificate-page' });
+
+    // ---- on-screen action strip (hidden when printing) ----
+    page.appendChild(el('div', { class: 'cert-actions no-print' }, [
+      el('button', {
+        class: 'btn', type: 'button',
+        onClick: () => window.print()
+      }, t('cert.print')),
+      el('a', { class: 'btn btn--ghost', href: '#/participants/' + p.id + '/edit' }, t('common.back'))
+    ]));
+
+    // ---- header / brand ----
+    page.appendChild(el('header', { class: 'cert-brand' }, [
+      el('img', { src: 'logo.png', alt: '', class: 'cert-brand__logo' }),
+      el('div', { class: 'cert-brand__name' }, t('cert.org'))
+    ]));
+
+    // ---- body ----
+    page.appendChild(el('h1', { class: 'cert-title' }, t('cert.heading')));
+    page.appendChild(el('p',  { class: 'cert-intro' }, t('cert.intro')));
+    page.appendChild(el('p',  { class: 'cert-name' }, fullName));
+    page.appendChild(el('p',  { class: 'cert-body' }, [
+      document.createTextNode(t('cert.bodyPrefix') + ' '),
+      el('strong', null, group.name || t('common.noName')),
+      cohort ? document.createTextNode(' (' + cohort.name + ')') : null,
+      document.createTextNode(
+        startDate && endDate
+          ? ' ' + t('cert.bodyDates', { from: formatDate(startDate), to: formatDate(endDate) })
+          : ''
+      ),
+      document.createTextNode('.')
+    ]));
+
+    page.appendChild(el('p', { class: 'cert-stats' }, [
+      document.createTextNode(t('cert.statsPrefix') + ' '),
+      el('strong', null, String(presentSessions.length)),
+      document.createTextNode(' / ' + allSessions.length + ' ' + t('cert.statsSuffix') + '.')
+    ]));
+
+    // ---- attended sessions list ----
+    if (presentSessions.length) {
+      page.appendChild(el('h3', { class: 'cert-list-title' }, t('cert.sessionsHeading')));
+      const ul = el('ul', { class: 'cert-session-list' });
+      presentSessions.forEach((s) => {
+        ul.appendChild(el('li', null, [
+          el('strong', null, formatDate(s.date)),
+          document.createTextNode(' — ' + (s.theme || t('common.noTheme'))),
+          s.location ? document.createTextNode(' · ' + s.location) : null
+        ]));
+      });
+      page.appendChild(ul);
+    }
+
+    // ---- footer (date + signature line) ----
+    page.appendChild(el('footer', { class: 'cert-sign' }, [
+      el('div', { class: 'cert-sign__col' }, [
+        el('div', { class: 'cert-sign__line' }),
+        el('div', { class: 'cert-sign__label' }, t('cert.signSignature'))
+      ]),
+      el('div', { class: 'cert-sign__col' }, [
+        el('div', { class: 'cert-sign__line' }, todayStr),
+        el('div', { class: 'cert-sign__label' }, t('cert.signDate'))
+      ])
+    ]));
+
+    root.appendChild(page);
+  }
+
   async function participantFormView(params, root) {
     const isEdit = !!params.id;
     let p;
@@ -2368,6 +2471,16 @@
       el('button', { class: 'btn btn--block', type: 'submit' }, isEdit ? t('common.save') : t('common.add'))
     ]);
     root.appendChild(form);
+
+    // v0.3.8 — Generate certificate link. Available on every existing
+    // participant; the certificate view shows 0 sessions cleanly when
+    // there's no attendance yet (mostly used at end of course).
+    if (isEdit) {
+      root.appendChild(el('a', {
+        class: 'btn btn--ghost btn--block', style: 'margin-top:12px',
+        href: '#/participants/' + p.id + '/certificate'
+      }, t('p.certCta')));
+    }
 
     // Synced participants can't be removed from the PWA — unenroll them in Moodle
     // v0.3.5d — participants who were marked PRESENT at any session can't be
@@ -4900,6 +5013,7 @@
   route('/groups/:groupId/participants/new', participantFormView);
   route('/participants', participantsListView);
   route('/participants/:id/edit', participantFormView);
+  route('/participants/:id/certificate', certificateView);
   route('/sessions', sessionsListView);
   route('/sessions/new', (_p, r) => sessionFormView({}, r));
   route('/sessions/:id', sessionDetailView);
