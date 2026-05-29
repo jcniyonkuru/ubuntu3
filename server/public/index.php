@@ -15,6 +15,7 @@ use Ubuntu\PasswordReset;
 use Ubuntu\MoodleSync;
 use Ubuntu\Reports;
 use Ubuntu\PublicFeed;
+use Ubuntu\Audit;
 
 $base = dirname(__DIR__);
 require $base . '/src/Config.php';
@@ -31,6 +32,7 @@ require $base . '/src/MoodleAuth.php';
 require $base . '/src/MoodleSync.php';
 require $base . '/src/Reports.php';
 require $base . '/src/PublicFeed.php';
+require $base . '/src/Audit.php';
 
 // Load config (config.php sits next to config.example.php in $base)
 try {
@@ -110,6 +112,9 @@ $routes = [
 
     // v0.3.2 — donor reports (admin only)
     ['POST',   '#^/admin/reports/donor$#',              [Reports::class, 'donor']],
+
+    // v0.3.8 — audit log (who edited what, when), admin only
+    ['GET',    '#^/admin/audit$#',                      [Audit::class, 'list']],
 
     // v0.3.3 — public stories feed (no auth)
     ['GET',    '#^/public/stories$#',                                       [PublicFeed::class, 'stories']],

@@ -74,6 +74,14 @@
     donorReport(body)               { return call('POST',   '/admin/reports/donor', { body: body || {} }); },
     syncPush(payload)               { return call('POST',   '/sync/push', { body: payload }); },
     pickUsers(courseId, q)          { return call('POST',   '/users/pick', { body: { courseId: courseId || null, q: q || '' } }); },
+    auditList(params) {
+      // v0.3.8 — paginated audit feed; takes {entity, action, since, until, page, size}
+      const qs = Object.entries(params || {})
+        .filter(([, v]) => v !== '' && v != null)
+        .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+        .join('&');
+      return call('GET', '/admin/audit' + (qs ? ('?' + qs) : ''));
+    },
   };
 
   /** RFC4122 v4 UUID. */
@@ -1014,6 +1022,249 @@
   function csvCell(v) {
     const s = String(v == null ? '' : v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  // ============================================================
+  //  Audit log — v0.3.8
+  //  Server endpoint /admin/audit derives created/updated/deleted
+  //  events from the existing author_id + server_updated_at columns
+  //  across the mutable entities. The UI gives admins entity / action /
+  //  date filters and paginated results so they can answer "who touched
+  //  what, when" without a separate history table.
+  // ============================================================
+  const AUDIT_ENTITIES = ['cohorts', 'courses', 'sessions', 'participants', 'stories'];
+  const AUDIT_ACTIONS  = ['created', 'updated', 'deleted'];
+  const AUDIT_STATE_KEY = 'ubuntu3.adminAudit.state';
+
+  function auditReadState() {
+    try { return JSON.parse(sessionStorage.getItem(AUDIT_STATE_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function auditWriteState(s) {
+    try { sessionStorage.setItem(AUDIT_STATE_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function auditActionPill(a) {
+    if (a === 'created') return pill('created', 'pill--success');
+    if (a === 'deleted') return pill('deleted', 'pill--danger');
+    return pill('updated', 'pill--brand');
+  }
+  function auditAuthorLabel(a) {
+    if (!a) return '—';
+    const name = [a.firstName, a.lastName].filter(Boolean).join(' ').trim();
+    return name || a.email || a.id || '—';
+  }
+  /** Build a deep link into the admin section that owns this entity. */
+  function auditEntityHref(entity) {
+    const map = { cohorts: 'cohorts', courses: 'groups', sessions: 'sessions',
+                  participants: 'participants', stories: 'stories' };
+    return '#' + (map[entity] || 'dashboard');
+  }
+
+  function renderAudit() {
+    const main = $('#main'); main.innerHTML = '';
+    main.appendChild(el('h1', null, 'Audit log'));
+    main.appendChild(el('p', { class: 'muted', style: 'margin-top:-6px' },
+      'Who created, edited, or deleted what — across cohorts, courses, sessions, participants, and stories. ' +
+      'Inferred from the existing author and timestamp columns; attendance toggles are excluded to keep the timeline readable.'));
+
+    const saved = auditReadState();
+
+    // ----- Filters -----
+    const form = el('form', { class: 'card no-print', id: 'audit-form', onSubmit: (e) => {
+      e.preventDefault();
+      loadAudit(1);
+    } }, [
+      el('div', { class: 'row wrap', style: 'gap:12px' }, [
+        el('div', { class: 'form-group', style: 'flex:1 1 200px; min-width:180px' }, [
+          el('label', null, 'Entity'),
+          (function () {
+            const sel = el('select', { name: 'entity' });
+            sel.appendChild(el('option', { value: '' }, 'All entities'));
+            AUDIT_ENTITIES.forEach((e) => {
+              const o = el('option', { value: e }, e.charAt(0).toUpperCase() + e.slice(1));
+              if (saved.entity === e) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ]),
+        el('div', { class: 'form-group', style: 'flex:1 1 160px; min-width:140px' }, [
+          el('label', null, 'Action'),
+          (function () {
+            const sel = el('select', { name: 'action' });
+            sel.appendChild(el('option', { value: '' }, 'All actions'));
+            AUDIT_ACTIONS.forEach((a) => {
+              const o = el('option', { value: a }, a.charAt(0).toUpperCase() + a.slice(1));
+              if (saved.action === a) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 160px' }, [
+          el('label', null, 'From'),
+          el('input', { name: 'since', type: 'date', value: saved.since || '' })
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 160px' }, [
+          el('label', null, 'To'),
+          el('input', { name: 'until', type: 'date', value: saved.until || '' })
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 110px' }, [
+          el('label', null, 'Per page'),
+          (function () {
+            const sel = el('select', { name: 'size' });
+            [25, 50, 100, 200].forEach((n) => {
+              const o = el('option', { value: String(n) }, String(n));
+              if (String(saved.size || 50) === String(n)) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ])
+      ]),
+      el('div', { class: 'row', style: 'gap:8px; margin-top:4px' }, [
+        el('button', { class: 'btn', type: 'submit' }, 'Apply'),
+        el('button', { class: 'btn btn--ghost', type: 'button', onClick: () => {
+          form.elements['entity'].value = '';
+          form.elements['action'].value = '';
+          form.elements['since'].value  = '';
+          form.elements['until'].value  = '';
+          form.elements['size'].value   = '50';
+          auditWriteState({});
+          loadAudit(1);
+        } }, 'Reset')
+      ])
+    ]);
+    main.appendChild(form);
+
+    // Result region — populated by renderAuditResult after each load.
+    const result = el('div', { id: 'audit-result' });
+    main.appendChild(result);
+
+    function readFilters() {
+      const sinceRaw = form.elements['since'].value;
+      const untilRaw = form.elements['until'].value;
+      const since = sinceRaw ? sinceRaw + 'T00:00:00Z' : '';
+      const until = untilRaw ? untilRaw + 'T23:59:59Z' : '';
+      return {
+        entity: form.elements['entity'].value,
+        action: form.elements['action'].value,
+        since,
+        until,
+        size: parseInt(form.elements['size'].value, 10) || 50
+      };
+    }
+
+    async function loadAudit(page) {
+      const f = readFilters();
+      auditWriteState({
+        entity: f.entity, action: f.action, size: f.size,
+        since:  form.elements['since'].value,
+        until:  form.elements['until'].value
+      });
+      result.innerHTML = '';
+      result.appendChild(el('p', { class: 'muted' }, 'Loading…'));
+      try {
+        const data = await API.auditList({
+          entity: f.entity || undefined,
+          action: f.action || undefined,
+          since:  f.since  || undefined,
+          until:  f.until  || undefined,
+          size:   f.size,
+          page:   page
+        });
+        renderAuditResult(result, data, f, loadAudit);
+      } catch (err) {
+        result.innerHTML = '';
+        result.appendChild(el('p', { class: 'error' },
+          'Could not load audit log: ' + (err.message || 'server error')));
+      }
+    }
+
+    // Initial load
+    loadAudit(1);
+  }
+
+  function renderAuditResult(container, data, filters, loadAudit) {
+    container.innerHTML = '';
+    const items = data.items || [];
+    const total = data.total || 0;
+    const page  = data.page  || 1;
+    const size  = data.size  || filters.size || 50;
+    const pages = Math.max(1, Math.ceil(total / size));
+
+    container.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'row between', style: 'align-items:center; margin-bottom:8px' }, [
+        el('p', { class: 'small muted', style: 'margin:0' },
+          total === 0
+            ? 'No events match these filters.'
+            : (total + ' event' + (total === 1 ? '' : 's') + ' — page ' + page + ' of ' + pages)),
+        items.length
+          ? el('button', { class: 'btn btn--sm btn--ghost', type: 'button',
+              onClick: () => downloadAuditCsv(items) }, 'Download CSV (this page)')
+          : null
+      ]),
+      items.length === 0
+        ? el('p', { class: 'empty' }, 'Nothing here yet — try widening the date range or clearing the entity filter.')
+        : renderTable(
+            ['When', 'Entity', 'Action', 'Title', 'Who'],
+            items.map((it) => [
+              fmtDate(it.at),
+              el('a', { href: auditEntityHref(it.entity) }, it.entity),
+              auditActionPill(it.action),
+              (function () {
+                const t = it.title || '(untitled)';
+                const sub = it.sub || '';
+                if (!sub) return t;
+                return el('span', null, [
+                  el('span', null, t),
+                  el('span', { class: 'small muted', style: 'margin-left:6px' }, '· ' + sub)
+                ]);
+              })(),
+              auditAuthorLabel(it.author)
+            ]),
+            null,
+            { searchPlaceholder: 'Filter this page… (' + items.length + ' rows)' }
+          )
+    ]));
+
+    // ----- Pagination strip -----
+    if (pages > 1) {
+      const strip = el('div', { class: 'row', style: 'gap:8px; margin-top:10px; align-items:center; justify-content:center' });
+      strip.appendChild(el('button', {
+        class: 'btn btn--ghost btn--sm', type: 'button', disabled: page <= 1,
+        onClick: () => loadAudit(page - 1)
+      }, '‹ Previous'));
+      strip.appendChild(el('span', { class: 'small muted' }, 'Page ' + page + ' / ' + pages));
+      strip.appendChild(el('button', {
+        class: 'btn btn--ghost btn--sm', type: 'button', disabled: page >= pages,
+        onClick: () => loadAudit(page + 1)
+      }, 'Next ›'));
+      container.appendChild(strip);
+    }
+  }
+
+  /** CSV export of the visible audit page — useful for ad-hoc forensics. */
+  function downloadAuditCsv(items) {
+    const header = ['When', 'Entity', 'Id', 'Action', 'Title', 'Sub', 'Author', 'Email'];
+    const lines = [header.join(',')];
+    items.forEach((it) => {
+      const who = auditAuthorLabel(it.author);
+      const email = (it.author && it.author.email) || '';
+      lines.push([
+        csvCell(fmtDate(it.at)), csvCell(it.entity), csvCell(it.id),
+        csvCell(it.action), csvCell(it.title || ''), csvCell(it.sub || ''),
+        csvCell(who), csvCell(email)
+      ].join(','));
+    });
+    // UTF-8 BOM so Excel detects accents correctly on Windows.
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ============================================================
@@ -2045,7 +2296,8 @@
       users: renderUsers,
       trainees: renderTrainees,
       cohorts: renderCohorts, groups: renderGroups, participants: renderParticipants,
-      sessions: renderSessions, stories: renderStories, reports: renderReports
+      sessions: renderSessions, stories: renderStories, reports: renderReports,
+      audit: renderAudit
     };
     (renderers[s] || renderDashboard)();
     // Close sidebar on mobile
