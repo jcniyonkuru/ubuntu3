@@ -1,7 +1,7 @@
 /* Ubuntu 3.0 — Service Worker
  * App-shell caching for offline use.
  */
-const CACHE = 'ubuntu30-v0.3.8-dev.11';
+const CACHE = 'ubuntu30-v0.3.8-dev.12';
 const ASSETS = [
   './',
   './index.html',

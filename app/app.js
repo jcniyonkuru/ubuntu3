@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.11';
+  const APP_VERSION = '0.3.8-dev.12';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -115,6 +115,26 @@
     }
     return prev[n];
   }
+  // v0.3.8 — leading-indicator for M&E coordinators: count the most
+  // recent consecutive recorded absences. We walk the sessions newest-
+  // first and stop on the first present=true OR the first session with
+  // no recorded attendance (treating "not yet recorded" as a gap rather
+  // than an absence — otherwise a trainer who forgot to mark attendance
+  // would silently flag the whole roster).
+  const AT_RISK_STREAK = 3;
+  function absenceStreak(participantId, sortedSessionsDesc, attByPart) {
+    const recs = attByPart.get(participantId);
+    if (!recs) return 0;
+    let streak = 0;
+    for (const s of sortedSessionsDesc) {
+      const rec = recs.get(s.id);
+      if (!rec) break;        // unrecorded — stop counting (don't penalise)
+      if (rec.present) break; // present → streak ends
+      streak++;
+    }
+    return streak;
+  }
+
   // Find the closest match (if any) among `candidates`. We compare the
   // new name in both "first last" and "last first" order to forgive
   // trainees whose order the trainer flips. Threshold scales with
@@ -1722,6 +1742,22 @@
       }]));
     }
 
+    // v0.3.8 — Load attendance once for this course so each participant
+    // row can compute its current absence streak (for the "At-risk"
+    // pill) without N round-trips to IndexedDB. Walk-in rows belong to
+    // a specific session so they don't contaminate the regular
+    // participant streak calculation.
+    const courseAtt = new Map(); // participantId → Map<sessionId, rec>
+    for (const sess of sessions) {
+      const recs = await DB.byIndex('attendance', 'sessionId', sess.id);
+      for (const rec of recs) {
+        if (rec.walkIn) continue;
+        let m = courseAtt.get(rec.participantId);
+        if (!m) { m = new Map(); courseAtt.set(rec.participantId, m); }
+        m.set(rec.sessionId, rec);
+      }
+    }
+
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.
     const partsSection = el('div', { class: 'course-participants' });
@@ -1745,6 +1781,11 @@
       sorted.forEach((p) => {
         const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
         const isDropped = p.status === 'dropped';
+        // v0.3.8 — at-risk pill when the participant has 3+ consecutive
+        // recorded absences. Dropped trainees are already off the active
+        // roster so the pill would be noise.
+        const streak = !isDropped ? absenceStreak(p.id, sessions, courseAtt) : 0;
+        const atRisk = streak >= AT_RISK_STREAK;
         // Moodle pill — flag enrolees that came from Ubuntu eLearning so
         // the trainer doesn't accidentally edit/delete a synced record.
         // Mirrors the pill shown on courses and sessions.
@@ -1753,6 +1794,11 @@
           p.source === 'moodle'
             ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
             : null,
+          atRisk ? el('span', {
+            class: 'pill pill--at-risk',
+            style: 'margin-left:8px;font-size:11px',
+            title: t('p.atRiskTooltip', { n: streak })
+          }, t('p.atRiskPill')) : null,
           isDropped ? el('span', {
             class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
@@ -1942,6 +1988,27 @@
     const groups = await DB.all('groups');
     const groupsById = new Map(groups.map((g) => [g.id, g]));
 
+    // v0.3.8 — build attendance + sessions indices once so each row
+    // can compute its own at-risk streak. Group attendance / sessions
+    // by groupId so the absenceStreak() call only sees the right
+    // course's history. Walk-in attendance excluded.
+    const allSessions = await DB.all('sessions');
+    const sessionsByGroup = new Map();   // groupId → sessions desc
+    allSessions.forEach((s) => {
+      const arr = sessionsByGroup.get(s.groupId) || [];
+      arr.push(s);
+      sessionsByGroup.set(s.groupId, arr);
+    });
+    sessionsByGroup.forEach((arr) => arr.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+    const allAttendance = await DB.all('attendance');
+    const attByPart = new Map();          // participantId → Map<sessionId, rec>
+    allAttendance.forEach((rec) => {
+      if (rec.walkIn) return;
+      let m = attByPart.get(rec.participantId);
+      if (!m) { m = new Map(); attByPart.set(rec.participantId, m); }
+      m.set(rec.sessionId, rec);
+    });
+
     root.appendChild(el('p', { class: 'muted' }, tn(participants.length, 'participantsList.countOne', 'participantsList.countOther')));
 
     participants.forEach((p) => {
@@ -1952,11 +2019,20 @@
         group ? group.name : null
       ].filter(Boolean).join(' · ');
       const isDropped = p.status === 'dropped';
+      const streak = !isDropped
+        ? absenceStreak(p.id, sessionsByGroup.get(p.groupId) || [], attByPart)
+        : 0;
+      const atRisk = streak >= AT_RISK_STREAK;
       const titleNode = el('div', { class: 'list-item__title' }, [
         document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
         p.source === 'moodle'
           ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
           : null,
+        atRisk ? el('span', {
+          class: 'pill pill--at-risk',
+          style: 'margin-left:8px;font-size:11px',
+          title: t('p.atRiskTooltip', { n: streak })
+        }, t('p.atRiskPill')) : null,
         isDropped
           ? el('span', { class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)' }, t('p.statusDropped'))
           : null
