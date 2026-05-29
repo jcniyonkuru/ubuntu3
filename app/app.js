@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.10';
+  const APP_VERSION = '0.3.8-dev.11';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -85,6 +85,54 @@
     if (code === 'F') return t('sex.f');
     if (code === 'M') return t('sex.m');
     return t('sex.nb');
+  }
+
+  // v0.3.8 — Lightweight name similarity. Used by the "Did you mean…?"
+  // duplicate-name warning on the + Participant picker. Cheap and good
+  // enough for Burundi names (Latin script, varied diacritics).
+  function normalizeName(s) {
+    return (s || '').toString().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip diacritics
+      .replace(/[^a-z0-9 ]+/g, ' ')                     // strip punctuation
+      .replace(/\s+/g, ' ').trim();
+  }
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    const m = a.length, n = b.length;
+    const prev = new Array(n + 1);
+    for (let j = 0; j <= n; j++) prev[j] = j;
+    for (let i = 1; i <= m; i++) {
+      let cur = i;
+      for (let j = 1; j <= n; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        const next = Math.min(prev[j] + 1, cur + 1, prev[j - 1] + cost);
+        prev[j - 1] = cur;
+        cur = next;
+      }
+      prev[n] = cur;
+    }
+    return prev[n];
+  }
+  // Find the closest match (if any) among `candidates`. We compare the
+  // new name in both "first last" and "last first" order to forgive
+  // trainees whose order the trainer flips. Threshold scales with
+  // length so short names (e.g. "Eric") require a closer match.
+  function findSimilarParticipant(newFirst, newLast, candidates) {
+    const newKey = normalizeName(newFirst + ' ' + newLast);
+    const newRev = normalizeName(newLast + ' ' + newFirst);
+    if (!newKey) return null;
+    let best = null, bestDist = Infinity;
+    for (const c of candidates) {
+      const cKey = normalizeName((c.firstName || '') + ' ' + (c.lastName || ''));
+      if (!cKey) continue;
+      const d = Math.min(levenshtein(newKey, cKey), levenshtein(newRev, cKey));
+      const maxLen = Math.max(newKey.length, cKey.length);
+      const cap = maxLen >= 12 ? 3 : maxLen >= 7 ? 2 : maxLen >= 4 ? 1 : 0;
+      if (d <= cap && d < bestDist) { best = c; bestDist = d; }
+    }
+    return best;
   }
 
   // ---------- list-row thumbnails ----------
@@ -2055,6 +2103,45 @@
       class: 'btn btn--ghost btn--block', type: 'button',
       style: 'margin-top:16px'
     }, t('picker.createNewCta'));
+    // v0.3.8 — duplicate-name warning. We compute candidates from the
+    // already-enrolled participants once when the picker renders, then
+    // re-check inside the submit handler. dupBypass lets the trainer
+    // proceed after acknowledging the warning ("Create anyway").
+    const enrolledForDupCheck = await DB.byIndex('participants', 'groupId', group.id);
+    let dupBypass = false;
+    const dupPanel = el('div', { class: 'card dup-suggestion', hidden: true, style: 'margin-top:8px' });
+    function showDupSuggestion(p) {
+      dupPanel.innerHTML = '';
+      const fullName = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName');
+      const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
+      dupPanel.appendChild(el('h4', { style: 'margin:0 0 4px' }, t('picker.dupTitle')));
+      dupPanel.appendChild(el('p', { class: 'small muted', style: 'margin:0 0 10px' }, t('picker.dupBody')));
+      dupPanel.appendChild(el('div', { class: 'list-item', style: 'margin-bottom:10px' }, [
+        thumbIcon('participants'),
+        el('div', { class: 'grow' }, [
+          el('div', { class: 'list-item__title' }, fullName),
+          el('div', { class: 'list-item__sub' }, sub || t('common.noDetails'))
+        ])
+      ]));
+      dupPanel.appendChild(el('div', { class: 'row', style: 'gap:8px; flex-wrap:wrap; justify-content:flex-end' }, [
+        el('a', {
+          class: 'btn btn--sm', href: '#/participants/' + p.id + '/edit',
+          onClick: () => { dupPanel.hidden = true; dupBypass = false; }
+        }, t('picker.dupUseExisting')),
+        el('button', {
+          class: 'btn btn--sm btn--ghost', type: 'button',
+          onClick: () => {
+            dupBypass = true;
+            dupPanel.hidden = true;
+            // Re-fire the submit programmatically so the same field
+            // values + validation path runs again, this time skipping
+            // the dup check.
+            createForm.requestSubmit();
+          }
+        }, t('picker.dupCreateAnyway'))
+      ]));
+      dupPanel.hidden = false;
+    }
     const createForm = el('form', {
       class: 'card', style: 'margin-top:8px', hidden: true,
       onSubmit: async (e) => {
@@ -2071,6 +2158,16 @@
         if (!email || !sex || !ageRange) {
           toast(t('picker.createNewMissing'));
           return;
+        }
+        // v0.3.8 — catch likely typos / duplicate enrolments before we
+        // create a brand-new user. Skipped when the trainer already
+        // confirmed via "Create anyway" on the suggestion panel.
+        if (!dupBypass) {
+          const dup = findSimilarParticipant(firstName, lastName, enrolledForDupCheck);
+          if (dup) {
+            showDupSuggestion(dup);
+            return;
+          }
         }
         const submit = createForm.querySelector('button[type=submit]');
         submit.disabled = true;
@@ -2117,8 +2214,19 @@
       createForm.hidden = false; createBtn.hidden = true;
       const fn = createForm.elements['firstName']; if (fn) fn.focus();
     });
+    // Whenever the trainer edits either name field we reset the bypass
+    // flag and tuck the suggestion panel away — they may have noticed
+    // the typo and corrected it, and we want the check to re-run.
+    ['firstName', 'lastName'].forEach((name) => {
+      const input = createForm.elements[name];
+      if (input) input.addEventListener('input', () => {
+        dupBypass = false;
+        dupPanel.hidden = true;
+      });
+    });
     root.appendChild(createBtn);
     root.appendChild(createForm);
+    root.appendChild(dupPanel);
   }
 
   async function participantFormView(params, root) {

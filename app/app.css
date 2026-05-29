@@ -967,6 +967,15 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* Duplicate-name warning that appears under the + Create new person
+   form when the typed name closely matches someone already enrolled. */
+.dup-suggestion {
+  background: #FFF7E5;
+  border: 1px solid #F0C674;
+}
+.dup-suggestion h4 { color: #8C5A00; margin: 0; }
+.dup-suggestion .list-item { background: #fff; }
+
 /* Reports → "Participants to complete" — tappable summary that
    expands into an inline sex/age editor. Designed so the trainer can
    fix the data without ever leaving the Reports tab. */
