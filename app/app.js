@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.13';
+  const APP_VERSION = '0.3.8-dev.14';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -115,6 +115,96 @@
     }
     return prev[n];
   }
+  // v0.3.8 — Hand-rolled SVG attendance trend chart. Returns a card
+  // node (or null when the course is too sparse to chart). Lives next
+  // to the at-risk pill since both use the same per-course attendance
+  // index. No external dependency: the chart is straight SVG so it
+  // works offline and stays under a few KB.
+  function makeAttendanceTrendCard(sessionsAsc, courseAtt, activeRoster) {
+    if (!sessionsAsc.length || activeRoster.length === 0) return null;
+    const points = sessionsAsc.map((s) => {
+      let present = 0;
+      for (const p of activeRoster) {
+        const m = courseAtt.get(p.id);
+        const rec = m && m.get(s.id);
+        if (rec && rec.present) present++;
+      }
+      return { date: s.date, pct: (present / activeRoster.length) * 100, present };
+    });
+    const avg = Math.round(points.reduce((sum, p) => sum + p.pct, 0) / points.length);
+
+    const W = 320, H = 140;
+    const padL = 30, padR = 10, padT = 12, padB = 26;
+    const cw = W - padL - padR;
+    const ch = H - padT - padB;
+    const xFor = (i) => padL + (points.length > 1 ? (cw * i) / (points.length - 1) : cw / 2);
+    const yFor = (pct) => padT + ch - (pct / 100) * ch;
+
+    const parts = [];
+    // Background grid + Y labels (0 / 50 / 100 %)
+    [0, 50, 100].forEach((pct) => {
+      const y = yFor(pct);
+      parts.push(
+        '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
+        '" stroke="#E5E5E7" stroke-width="1"/>'
+      );
+      parts.push(
+        '<text x="' + (padL - 6) + '" y="' + (y + 3.5) +
+        '" text-anchor="end" font-size="9" fill="#9a9a9e">' + pct + '%</text>'
+      );
+    });
+    // Build the line path
+    const pathD = points.map((p, i) => (i ? 'L' : 'M') + xFor(i) + ',' + yFor(p.pct)).join(' ');
+    // Soft fill underneath the line so trends read at a glance
+    const areaD = pathD +
+      ' L' + xFor(points.length - 1) + ',' + yFor(0) +
+      ' L' + xFor(0) + ',' + yFor(0) + ' Z';
+    parts.push('<path d="' + areaD + '" fill="var(--brand-tint)" opacity="0.55"/>');
+    parts.push('<path d="' + pathD + '" stroke="var(--brand)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
+    // Dots on each session
+    points.forEach((p, i) => {
+      parts.push(
+        '<circle cx="' + xFor(i) + '" cy="' + yFor(p.pct) +
+        '" r="2.8" fill="var(--brand)"><title>' +
+        formatDate(p.date) + ' — ' + Math.round(p.pct) + '%</title></circle>'
+      );
+    });
+    // X-axis labels: first and last date
+    const fmtShort = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      try {
+        return d.toLocaleDateString(window.I18N.dateLocale(), { day: '2-digit', month: 'short' });
+      } catch (e) { return iso; }
+    };
+    parts.push(
+      '<text x="' + xFor(0) + '" y="' + (H - 8) +
+      '" text-anchor="middle" font-size="10" fill="#9a9a9e">' + fmtShort(points[0].date) + '</text>'
+    );
+    if (points.length > 1) {
+      parts.push(
+        '<text x="' + xFor(points.length - 1) + '" y="' + (H - 8) +
+        '" text-anchor="middle" font-size="10" fill="#9a9a9e">' +
+        fmtShort(points[points.length - 1].date) + '</text>'
+      );
+    }
+    const svg =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="trend-chart" ' +
+      'role="img" aria-label="' + t('group.trendAria') + '">' +
+      parts.join('') + '</svg>';
+
+    return el('div', { class: 'card trend-card' }, [
+      el('div', { class: 'row between', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('group.trendTitle')),
+          el('div', { class: 'card__sub' }, t('group.trendAvg', { avg: avg }))
+        ])
+      ]),
+      el('div', { class: 'trend-chart-wrap', html: svg })
+    ]);
+  }
+
   // v0.3.8 — leading-indicator for M&E coordinators: count the most
   // recent consecutive recorded absences. We walk the sessions newest-
   // first and stop on the first present=true OR the first session with
@@ -1757,6 +1847,14 @@
         m.set(rec.sessionId, rec);
       }
     }
+
+    // v0.3.8 — Attendance trend chart. Built from the per-course
+    // attendance index above so the calculation is essentially free.
+    // Skipped when there's no roster or no sessions.
+    const sessionsAsc = sessions.slice().reverse();
+    const activeRoster = participants.filter((p) => p.status !== 'dropped');
+    const trendCard = makeAttendanceTrendCard(sessionsAsc, courseAtt, activeRoster);
+    if (trendCard) root.appendChild(trendCard);
 
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.

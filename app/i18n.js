@@ -261,6 +261,9 @@
       'group.sessionsHeading': 'Sessions ({n})',
       'group.newSession': '+ Session',
       'group.noSessions': 'Aucune session enregistrée pour ce cours.',
+      'group.trendTitle': 'Présence — évolution',
+      'group.trendAvg': 'Moyenne : {avg}% de présence',
+      'group.trendAria': 'Évolution du taux de présence dans le temps',
 
       // Participant
       'p.newTitle': 'Nouveau participant',
@@ -780,6 +783,9 @@
       'group.sessionsHeading': 'Sessions ({n})',
       'group.newSession': '+ Session',
       'group.noSessions': 'No sessions recorded for this course.',
+      'group.trendTitle': 'Attendance trend',
+      'group.trendAvg': 'Average attendance: {avg}%',
+      'group.trendAria': 'Attendance percentage over time',
 
       'p.newTitle': 'New participant',
       'p.editTitle': 'Edit participant',
@@ -1295,6 +1301,9 @@
       'group.sessionsHeading': 'Inyigisho ({n})',
       'group.newSession': '+ Inyigisho',
       'group.noSessions': 'Nta nyigisho yanditswe kuri iri somero.',
+      'group.trendTitle': "Ihagaze ry'abitabira",
+      'group.trendAvg': 'Impuzandengo: {avg}%',
+      'group.trendAria': "Ihindagurika ry'abitabira mu nyigisho",
 
       'p.newTitle': 'Uwitabira mushasha',
       'p.editTitle': 'Hindura uwitabira',

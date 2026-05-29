@@ -967,6 +967,17 @@ p { margin: 6px 0; }
 .action-circle:hover .action-circle__icon { background: var(--brand-tint); }
 .action-circle:active .action-circle__icon { background: var(--brand-tint); transform: scale(.96); }
 .action-circle[disabled] { opacity: .5; pointer-events: none; }
+/* v0.3.8 — Attendance trend chart on the course detail page. Tiny
+   hand-rolled SVG sized to flex with the card width on mobile. */
+.trend-card { margin-bottom: 14px; }
+.trend-chart-wrap { margin-top: 10px; }
+.trend-chart {
+  width: 100%;
+  height: auto;
+  max-height: 180px;
+  display: block;
+}
+
 /* v0.3.8 — Participant attendance certificate. Paint as a centred A4
    sheet on screen; the print stylesheet at the bottom of this file
    strips the app chrome so the trainer's browser can save it as PDF. */
