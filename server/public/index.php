@@ -16,6 +16,7 @@ use Ubuntu\MoodleSync;
 use Ubuntu\Reports;
 use Ubuntu\PublicFeed;
 use Ubuntu\Audit;
+use Ubuntu\Demo;
 
 $base = dirname(__DIR__);
 require $base . '/src/Config.php';
@@ -33,6 +34,7 @@ require $base . '/src/MoodleSync.php';
 require $base . '/src/Reports.php';
 require $base . '/src/PublicFeed.php';
 require $base . '/src/Audit.php';
+require $base . '/src/Demo.php';
 
 // Load config (config.php sits next to config.example.php in $base)
 try {
@@ -115,6 +117,14 @@ $routes = [
 
     // v0.3.8 — audit log (who edited what, when), admin only
     ['GET',    '#^/admin/audit$#',                      [Audit::class, 'list']],
+
+    // v0.3.8 — sample-data toggle for trainer training (admin only).
+    // Spins up a DEMO cohort + courses + sessions + attendance + stories
+    // that sync down to every device, and a one-click cleanup that
+    // tombstones the whole subtree.
+    ['GET',    '#^/admin/demo/status$#',                [Demo::class, 'status']],
+    ['POST',   '#^/admin/demo/seed$#',                  [Demo::class, 'seed']],
+    ['POST',   '#^/admin/demo/remove$#',                [Demo::class, 'remove']],
 
     // v0.3.3 — public stories feed (no auth)
     ['GET',    '#^/public/stories$#',                                       [PublicFeed::class, 'stories']],
