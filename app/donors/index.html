@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#B73B3F" />
+  <title>Impact dashboard — Académie Ubuntu</title>
+  <meta name="description" content="Aggregated, anonymised impact stats from Académie Ubuntu's leadership and civic training programs in Burundi." />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <style>
+    :root {
+      --brand: #B73B3F;
+      --brand-dark: #8C2D31;
+      --brand-tint: #FBEDED;
+      --bg: #FAFAFB;
+      --card: #FFFFFF;
+      --text: #1B1B1B;
+      --muted: #6B6B6B;
+      --border: #E6E6E8;
+      --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- masthead ---------- */
+    .masthead {
+      background: linear-gradient(160deg, var(--brand), var(--brand-dark));
+      color: #fff;
+      padding: 32px 20px 28px;
+      text-align: center;
+    }
+    .masthead__brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .masthead__brand img { width: 46px; height: 46px; }
+    .masthead h1 { margin: 4px 0 6px; font-size: 28px; font-weight: 700; letter-spacing: .2px; }
+    .masthead p  { max-width: 620px; margin: 0 auto; color: rgba(255,255,255,.92); font-size: 14.5px; }
+
+    /* ---------- container ---------- */
+    .container { max-width: 1000px; margin: 0 auto; padding: 22px 14px 60px; }
+    .section { margin-bottom: 24px; }
+    .section h2 { font-size: 20px; margin: 0 0 12px; }
+    .section .lead { color: var(--muted); margin: -6px 0 12px; font-size: 14px; }
+
+    /* ---------- KPI tiles ---------- */
+    .kpis {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+    .kpi__label { color: var(--muted); font-size: 13px; font-weight: 500; }
+    .kpi__value { font-size: 28px; font-weight: 700; margin-top: 2px; line-height: 1.1; color: var(--brand-dark); }
+    .kpi__sub   { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+
+    /* ---------- card ---------- */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .grid-2 {
+      display: grid; gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 780px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+
+    /* ---------- bar chart (CSS only) ---------- */
+    .bar-row { display: grid; grid-template-columns: 110px 1fr 56px; gap: 8px; align-items: center; padding: 4px 0; }
+    .bar-row__label { font-size: 13.5px; color: var(--text); }
+    .bar-row__pct   { font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+    .bar-track { background: var(--brand-tint); border-radius: 4px; height: 10px; overflow: hidden; }
+    .bar-fill  { background: var(--brand); height: 100%; border-radius: 4px; transition: width .3s ease; }
+
+    /* ---------- trend chart ---------- */
+    .trend { display: flex; align-items: flex-end; gap: 6px; height: 140px; padding: 8px 0 0; }
+    .trend__col { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+    .trend__col .bar { background: var(--brand); width: 100%; max-width: 36px; border-radius: 6px 6px 0 0; }
+    .trend__col .label { font-size: 11px; color: var(--muted); margin-top: 6px; white-space: nowrap; }
+    .trend__col .value { font-size: 11px; color: var(--text); font-weight: 600; }
+
+    /* ---------- regions table ---------- */
+    .regions { width: 100%; border-collapse: collapse; }
+    .regions th, .regions td {
+      padding: 8px 10px; text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .regions th { color: var(--muted); font-weight: 500; }
+    .regions tr:last-child td { border-bottom: 0; }
+    .regions td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* ---------- stories strip ---------- */
+    .stories {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .story {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .story__photo {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      border-radius: 10px;
+      background: var(--brand-tint);
+    }
+    .story__text  { font-size: 14.5px; }
+    .story__meta  { color: var(--muted); font-size: 12.5px; }
+
+    /* ---------- footer ---------- */
+    .footer { text-align: center; padding: 32px 12px; color: var(--muted); font-size: 13px; }
+    .footer a { color: var(--brand-dark); text-decoration: none; }
+
+    .state { text-align: center; color: var(--muted); padding: 36px 12px; }
+    .state.error { color: var(--brand-dark); }
+    .muted { color: var(--muted); }
+    .as-of { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+    .privacy {
+      font-size: 12.5px; color: var(--muted);
+      background: var(--brand-tint);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead__brand">
+      <img src="/icon-192.png" alt="" />
+      <span style="font-weight:600; font-size:18px;">Académie Ubuntu</span>
+    </div>
+    <h1>Impact dashboard</h1>
+    <p>Aggregated, anonymised stats from our leadership and civic-skills training across Burundi. Refreshed live from the field.</p>
+  </header>
+
+  <main class="container">
+    <div id="status" class="state">Loading…</div>
+    <div id="content" hidden>
+      <!-- KPIs -->
+      <section class="section">
+        <div class="kpis" id="kpis"></div>
+        <p class="as-of" id="as-of"></p>
+      </section>
+
+      <!-- Attendance trend + demographics -->
+      <section class="section">
+        <div class="grid-2">
+          <div class="card">
+            <h2>Sessions delivered · last 6 months</h2>
+            <p class="lead" id="trend-sub"></p>
+            <div class="trend" id="trend"></div>
+          </div>
+          <div class="card">
+            <h2>Who we serve</h2>
+            <p class="lead" id="demo-sub"></p>
+            <div id="demo-sex"></div>
+            <h3 style="margin:16px 0 8px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em">Age range</h3>
+            <div id="demo-age"></div>
+            <p class="privacy" id="privacy-note"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Regions -->
+      <section class="section">
+        <div class="card">
+          <h2>Reach by region</h2>
+          <p class="lead">Cohorts and participants where we are active.</p>
+          <table class="regions" id="regions">
+            <thead><tr><th>Region</th><th class="num">Cohorts</th><th class="num">Participants</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Stories -->
+      <section class="section">
+        <div class="card">
+          <h2>Voices from the field</h2>
+          <p class="lead">A handful of recent stories shared by participants who agreed to make their words public.</p>
+          <div class="stories" id="stories"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>
+      © <span id="year"></span> Académie Ubuntu &middot;
+      <a href="https://www.academyubuntu.com">www.academyubuntu.com</a> &middot;
+      <a href="/news/">Stories feed</a>
+    </p>
+  </footer>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // The donor portal is served from donors.academyubuntu.com but the API
+    // lives on ubuntu3.academyubuntu.com. Caddy in production reverse-proxies
+    // /api/* on the donors host to the same backend so the page can stay on
+    // its own origin without CORS gymnastics. Locally everything is one
+    // Apache vhost, so `location.origin + '/api'` works there too.
+    var API_BASE = location.origin + '/api';
+
+    var statusEl  = document.getElementById('status');
+    var contentEl = document.getElementById('content');
+    var kpisEl    = document.getElementById('kpis');
+    var trendEl   = document.getElementById('trend');
+    var trendSub  = document.getElementById('trend-sub');
+    var demoSex   = document.getElementById('demo-sex');
+    var demoAge   = document.getElementById('demo-age');
+    var demoSub   = document.getElementById('demo-sub');
+    var regionsT  = document.querySelector('#regions tbody');
+    var storiesEl = document.getElementById('stories');
+    var asOfEl    = document.getElementById('as-of');
+    var privacyEl = document.getElementById('privacy-note');
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    function n(v) { return new Intl.NumberFormat().format(v || 0); }
+    function fmtDate(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    function fmtMonth(ym) {
+      // "2026-04" → "Apr 26"
+      if (!ym || typeof ym !== 'string') return ym || '';
+      var parts = ym.split('-');
+      if (parts.length !== 2) return ym;
+      var d = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      if (isNaN(d.getTime())) return ym;
+      return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+    }
+
+    function el(tag, attrs, kids) {
+      var node = document.createElement(tag);
+      if (attrs) {
+        Object.keys(attrs).forEach(function (k) {
+          var v = attrs[k];
+          if (v == null) return;
+          if (k === 'class') node.className = v;
+          else if (k === 'style') node.style.cssText = v;
+          else node.setAttribute(k, v);
+        });
+      }
+      (kids || []).forEach(function (k) {
+        if (k == null) return;
+        if (k.nodeType) node.appendChild(k);
+        else node.appendChild(document.createTextNode(String(k)));
+      });
+      return node;
+    }
+
+    function renderKpis(d) {
+      var totals = d.totals || {};
+      var att = d.attendance || {};
+      var tiles = [
+        { label: 'Active cohorts (90 days)', value: n(totals.activeCohorts), sub: n(totals.cohorts) + ' total' },
+        { label: 'Courses running',          value: n(totals.courses),       sub: '' },
+        { label: 'Participants reached',     value: n(totals.participants),  sub: '' },
+        { label: 'Sessions delivered',       value: n(totals.sessions),      sub: n(totals.sessionsLast30) + ' in the last 30 days' },
+        { label: 'Average attendance',       value: (att.overallPct || 0) + '%', sub: n(att.presentTotal) + ' present / ' + n(att.recordedTotal) },
+        { label: 'Stories with consent',     value: n(totals.stories),       sub: 'Shared by participants' },
+      ];
+      kpisEl.innerHTML = '';
+      tiles.forEach(function (t) {
+        kpisEl.appendChild(el('div', { class: 'kpi' }, [
+          el('div', { class: 'kpi__label' }, [t.label]),
+          el('div', { class: 'kpi__value' }, [t.value]),
+          t.sub ? el('div', { class: 'kpi__sub' }, [t.sub]) : null
+        ]));
+      });
+    }
+
+    function renderTrend(d) {
+      var trend = d.trend || [];
+      trendEl.innerHTML = '';
+      if (!trend.length) {
+        trendEl.appendChild(el('p', { class: 'muted' }, ['No sessions in the last 6 months.']));
+        trendSub.textContent = '';
+        return;
+      }
+      var maxSessions = trend.reduce(function (m, r) { return Math.max(m, r.sessions || 0); }, 1);
+      trendSub.textContent = (d.attendance && typeof d.attendance.last30Pct === 'number')
+        ? 'Bar height = sessions held that month. Last-30-day attendance: ' + d.attendance.last30Pct + '%.'
+        : 'Bar height = sessions held that month.';
+      trend.forEach(function (m) {
+        var heightPx = Math.max(4, Math.round((m.sessions / maxSessions) * 110));
+        var col = el('div', { class: 'trend__col' }, [
+          el('div', { class: 'value' }, [String(m.sessions)]),
+          el('div', { class: 'bar', style: 'height:' + heightPx + 'px;' }, []),
+          el('div', { class: 'label' }, [fmtMonth(m.month)])
+        ]);
+        trendEl.appendChild(col);
+      });
+    }
+
+    function renderBars(host, rows) {
+      host.innerHTML = '';
+      if (!rows || !rows.length) {
+        host.appendChild(el('p', { class: 'muted' }, ['No data yet.']));
+        return;
+      }
+      rows.forEach(function (r) {
+        host.appendChild(el('div', { class: 'bar-row' }, [
+          el('div', { class: 'bar-row__label' }, [r.label || '—']),
+          el('div', { class: 'bar-track' }, [
+            el('div', { class: 'bar-fill', style: 'width:' + (r.pct || 0) + '%;' }, [])
+          ]),
+          el('div', { class: 'bar-row__pct' }, [(r.pct || 0) + '%'])
+        ]));
+      });
+    }
+
+    function renderDemographics(d) {
+      var demo = d.demographics || { bySex: [], byAgeRange: [] };
+      demoSub.textContent = 'Based on ' + n(demo.sampleSize) + ' participant(s). Buckets smaller than ' +
+        (demo.threshold || 5) + ' are rolled into "Other" so individuals stay anonymous.';
+      renderBars(demoSex, demo.bySex);
+      renderBars(demoAge, demo.byAgeRange);
+      privacyEl.textContent = 'Privacy: no names, contacts, or individual records are ever exposed here. Counts and percentages only.';
+    }
+
+    function renderRegions(d) {
+      regionsT.innerHTML = '';
+      var rows = (d.regions || []).filter(function (r) { return r.participants || r.cohorts; });
+      if (!rows.length) {
+        regionsT.appendChild(el('tr', null, [el('td', { colspan: '3', class: 'muted' }, ['No regional data yet.'])]));
+        return;
+      }
+      rows.forEach(function (r) {
+        regionsT.appendChild(el('tr', null, [
+          el('td', null, [r.region || '—']),
+          el('td', { class: 'num' }, [n(r.cohorts)]),
+          el('td', { class: 'num' }, [n(r.participants)])
+        ]));
+      });
+    }
+
+    function renderStories(d) {
+      var stories = d.stories || [];
+      storiesEl.innerHTML = '';
+      if (!stories.length) {
+        storiesEl.appendChild(el('p', { class: 'muted' }, ['No published stories yet — trainers share new ones every week.']));
+        return;
+      }
+      stories.forEach(function (s) {
+        var kids = [];
+        if (s.hasPhoto && s.photoUrl) {
+          kids.push(el('img', { class: 'story__photo', src: s.photoUrl, alt: '', loading: 'lazy' }, []));
+        }
+        kids.push(el('div', { class: 'story__text' }, ['“', s.text || '', '”']));
+        var meta = [];
+        if (s.firstName) meta.push(s.firstName);
+        if (s.region) meta.push(s.region);
+        if (s.date) meta.push(fmtDate(s.date));
+        kids.push(el('div', { class: 'story__meta' }, [meta.join(' · ')]));
+        storiesEl.appendChild(el('div', { class: 'story' }, kids));
+      });
+    }
+
+    function renderAsOf(d) {
+      var iso = d.generatedAt;
+      if (!iso) { asOfEl.textContent = ''; return; }
+      var dt = new Date(iso);
+      asOfEl.textContent = isNaN(dt.getTime())
+        ? ''
+        : 'Numbers refreshed: ' + dt.toLocaleString();
+    }
+
+    function showError(msg) {
+      statusEl.className = 'state error';
+      statusEl.textContent = msg;
+      contentEl.hidden = true;
+    }
+
+    function load() {
+      fetch(API_BASE + '/public/donor-stats', { headers: { Accept: 'application/json' } })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          statusEl.hidden = true;
+          contentEl.hidden = false;
+          renderKpis(data);
+          renderTrend(data);
+          renderDemographics(data);
+          renderRegions(data);
+          renderStories(data);
+          renderAsOf(data);
+        })
+        .catch(function (err) {
+          showError('Could not load the impact dashboard right now. Please try again in a minute.');
+          // Surface the underlying error to the console for our own debugging.
+          console.error('[donors]', err);
+        });
+    }
+
+    load();
+  })();
+  </script>
+</body>
+</html>

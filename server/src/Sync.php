@@ -69,6 +69,9 @@ final class Sync
                 'theme' => 'theme',
                 'location' => 'location',
                 'notes' => 'notes',
+                // v0.3.8 — visual + audio proof. Mirrors hasPhoto/hasAudio on stories.
+                'hasPhoto' => 'has_photo',
+                'hasAudio' => 'has_audio',
             ],
             'readonly' => [
                 'source' => 'source',

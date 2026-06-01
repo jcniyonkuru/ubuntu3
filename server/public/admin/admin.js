@@ -74,6 +74,18 @@
     donorReport(body)               { return call('POST',   '/admin/reports/donor', { body: body || {} }); },
     syncPush(payload)               { return call('POST',   '/sync/push', { body: payload }); },
     pickUsers(courseId, q)          { return call('POST',   '/users/pick', { body: { courseId: courseId || null, q: q || '' } }); },
+    auditList(params) {
+      // v0.3.8 — paginated audit feed; takes {entity, action, since, until, page, size}
+      const qs = Object.entries(params || {})
+        .filter(([, v]) => v !== '' && v != null)
+        .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+        .join('&');
+      return call('GET', '/admin/audit' + (qs ? ('?' + qs) : ''));
+    },
+    // v0.3.8 — demo (sample data) toggle
+    demoStatus()                    { return call('GET',  '/admin/demo/status'); },
+    demoSeed()                      { return call('POST', '/admin/demo/seed'); },
+    demoRemove()                    { return call('POST', '/admin/demo/remove'); },
   };
 
   /** RFC4122 v4 UUID. */
@@ -373,6 +385,94 @@
       card2.appendChild(tbl);
     }
     main.appendChild(card2);
+
+    // ----- Sample data card (v0.3.8) -----
+    // Lets the admin spin up a DEMO cohort full of fake data for trainer
+    // training, and remove it again in one click. The actual create/destroy
+    // happens server-side and syncs down to every device.
+    main.appendChild(renderDemoCard());
+  }
+
+  /**
+   * Sample-data card: status probe + Create/Remove CTA. Re-renders itself in
+   * place after each action so the admin sees the new counts immediately
+   * (the cleanup also kicks a top-level refresh so the rest of the dashboard
+   * stops showing the demo numbers).
+   */
+  function renderDemoCard() {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('div', { class: 'card__head' }, el('h2', null, 'Sample data (trainer training)')));
+    card.appendChild(el('p', { class: 'small muted', style: 'margin-top:0' },
+      'Spin up a self-contained DEMO cohort full of fake participants, sessions, attendance, and stories so new trainers can practice in the PWA without touching real data. One click to create, one click to remove. The demo syncs down to every device.'));
+
+    const body = el('div');
+    card.appendChild(body);
+
+    async function rerender() {
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'small muted' }, 'Checking…'));
+      let st;
+      try { st = await API.demoStatus(); }
+      catch (err) {
+        body.innerHTML = '';
+        body.appendChild(el('p', { class: 'error' }, 'Could not load demo status: ' + (err.message || 'server error')));
+        return;
+      }
+      body.innerHTML = '';
+
+      if (st && st.present) {
+        body.appendChild(el('p', null, [
+          el('strong', null, st.cohortName || 'DEMO cohort'),
+          ' — ',
+          el('span', { class: 'small muted' },
+            st.courses + ' course(s) · ' + st.participants + ' participant(s) · ' +
+            st.sessions + ' session(s) · ' + st.attendance + ' attendance row(s) · ' +
+            st.stories + ' stor' + (st.stories === 1 ? 'y' : 'ies'))
+        ]));
+        const removeBtn = el('button', {
+          class: 'btn btn--sm',
+          style: 'background:var(--danger); color:#fff',
+          onClick: async () => {
+            if (!confirm('Remove the demo cohort and every fake course / session / participant / story under it? This soft-deletes everything (tombstones sync down to all devices).')) return;
+            removeBtn.disabled = true; removeBtn.textContent = 'Removing…';
+            try {
+              const r = await API.demoRemove();
+              toast(r && r.removed
+                ? 'Demo data removed (' + (r.tombstoned || 0) + ' rows tombstoned).'
+                : 'No demo data to remove.');
+              await refresh();
+              renderCurrent();
+            } catch (err) {
+              toast('Could not remove demo data: ' + (err.message || 'server error'));
+              removeBtn.disabled = false; removeBtn.textContent = 'Remove demo data';
+            }
+          }
+        }, 'Remove demo data');
+        body.appendChild(el('div', { class: 'row', style: 'gap:8px; margin-top:8px' }, [removeBtn]));
+      } else {
+        body.appendChild(el('p', { class: 'small muted' }, 'No demo data right now.'));
+        const seedBtn = el('button', {
+          class: 'btn btn--sm',
+          onClick: async () => {
+            seedBtn.disabled = true; seedBtn.textContent = 'Creating…';
+            try {
+              const r = await API.demoSeed();
+              toast('Demo cohort ready: ' + (r.participants || 0) + ' participants, ' +
+                    (r.sessions || 0) + ' sessions.');
+              await refresh();
+              renderCurrent();
+            } catch (err) {
+              toast('Could not create demo data: ' + (err.message || 'server error'));
+              seedBtn.disabled = false; seedBtn.textContent = 'Create demo cohort';
+            }
+          }
+        }, 'Create demo cohort');
+        body.appendChild(el('div', { class: 'row', style: 'gap:8px; margin-top:8px' }, [seedBtn]));
+      }
+    }
+
+    rerender();
+    return card;
   }
 
   /** "Trainees" sidebar link: render the Users page in trainees mode. */
@@ -1014,6 +1114,249 @@
   function csvCell(v) {
     const s = String(v == null ? '' : v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  // ============================================================
+  //  Audit log — v0.3.8
+  //  Server endpoint /admin/audit derives created/updated/deleted
+  //  events from the existing author_id + server_updated_at columns
+  //  across the mutable entities. The UI gives admins entity / action /
+  //  date filters and paginated results so they can answer "who touched
+  //  what, when" without a separate history table.
+  // ============================================================
+  const AUDIT_ENTITIES = ['cohorts', 'courses', 'sessions', 'participants', 'stories'];
+  const AUDIT_ACTIONS  = ['created', 'updated', 'deleted'];
+  const AUDIT_STATE_KEY = 'ubuntu3.adminAudit.state';
+
+  function auditReadState() {
+    try { return JSON.parse(sessionStorage.getItem(AUDIT_STATE_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function auditWriteState(s) {
+    try { sessionStorage.setItem(AUDIT_STATE_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function auditActionPill(a) {
+    if (a === 'created') return pill('created', 'pill--success');
+    if (a === 'deleted') return pill('deleted', 'pill--danger');
+    return pill('updated', 'pill--brand');
+  }
+  function auditAuthorLabel(a) {
+    if (!a) return '—';
+    const name = [a.firstName, a.lastName].filter(Boolean).join(' ').trim();
+    return name || a.email || a.id || '—';
+  }
+  /** Build a deep link into the admin section that owns this entity. */
+  function auditEntityHref(entity) {
+    const map = { cohorts: 'cohorts', courses: 'groups', sessions: 'sessions',
+                  participants: 'participants', stories: 'stories' };
+    return '#' + (map[entity] || 'dashboard');
+  }
+
+  function renderAudit() {
+    const main = $('#main'); main.innerHTML = '';
+    main.appendChild(el('h1', null, 'Audit log'));
+    main.appendChild(el('p', { class: 'muted', style: 'margin-top:-6px' },
+      'Who created, edited, or deleted what — across cohorts, courses, sessions, participants, and stories. ' +
+      'Inferred from the existing author and timestamp columns; attendance toggles are excluded to keep the timeline readable.'));
+
+    const saved = auditReadState();
+
+    // ----- Filters -----
+    const form = el('form', { class: 'card no-print', id: 'audit-form', onSubmit: (e) => {
+      e.preventDefault();
+      loadAudit(1);
+    } }, [
+      el('div', { class: 'row wrap', style: 'gap:12px' }, [
+        el('div', { class: 'form-group', style: 'flex:1 1 200px; min-width:180px' }, [
+          el('label', null, 'Entity'),
+          (function () {
+            const sel = el('select', { name: 'entity' });
+            sel.appendChild(el('option', { value: '' }, 'All entities'));
+            AUDIT_ENTITIES.forEach((e) => {
+              const o = el('option', { value: e }, e.charAt(0).toUpperCase() + e.slice(1));
+              if (saved.entity === e) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ]),
+        el('div', { class: 'form-group', style: 'flex:1 1 160px; min-width:140px' }, [
+          el('label', null, 'Action'),
+          (function () {
+            const sel = el('select', { name: 'action' });
+            sel.appendChild(el('option', { value: '' }, 'All actions'));
+            AUDIT_ACTIONS.forEach((a) => {
+              const o = el('option', { value: a }, a.charAt(0).toUpperCase() + a.slice(1));
+              if (saved.action === a) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 160px' }, [
+          el('label', null, 'From'),
+          el('input', { name: 'since', type: 'date', value: saved.since || '' })
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 160px' }, [
+          el('label', null, 'To'),
+          el('input', { name: 'until', type: 'date', value: saved.until || '' })
+        ]),
+        el('div', { class: 'form-group', style: 'flex:0 0 110px' }, [
+          el('label', null, 'Per page'),
+          (function () {
+            const sel = el('select', { name: 'size' });
+            [25, 50, 100, 200].forEach((n) => {
+              const o = el('option', { value: String(n) }, String(n));
+              if (String(saved.size || 50) === String(n)) o.selected = true;
+              sel.appendChild(o);
+            });
+            return sel;
+          })()
+        ])
+      ]),
+      el('div', { class: 'row', style: 'gap:8px; margin-top:4px' }, [
+        el('button', { class: 'btn', type: 'submit' }, 'Apply'),
+        el('button', { class: 'btn btn--ghost', type: 'button', onClick: () => {
+          form.elements['entity'].value = '';
+          form.elements['action'].value = '';
+          form.elements['since'].value  = '';
+          form.elements['until'].value  = '';
+          form.elements['size'].value   = '50';
+          auditWriteState({});
+          loadAudit(1);
+        } }, 'Reset')
+      ])
+    ]);
+    main.appendChild(form);
+
+    // Result region — populated by renderAuditResult after each load.
+    const result = el('div', { id: 'audit-result' });
+    main.appendChild(result);
+
+    function readFilters() {
+      const sinceRaw = form.elements['since'].value;
+      const untilRaw = form.elements['until'].value;
+      const since = sinceRaw ? sinceRaw + 'T00:00:00Z' : '';
+      const until = untilRaw ? untilRaw + 'T23:59:59Z' : '';
+      return {
+        entity: form.elements['entity'].value,
+        action: form.elements['action'].value,
+        since,
+        until,
+        size: parseInt(form.elements['size'].value, 10) || 50
+      };
+    }
+
+    async function loadAudit(page) {
+      const f = readFilters();
+      auditWriteState({
+        entity: f.entity, action: f.action, size: f.size,
+        since:  form.elements['since'].value,
+        until:  form.elements['until'].value
+      });
+      result.innerHTML = '';
+      result.appendChild(el('p', { class: 'muted' }, 'Loading…'));
+      try {
+        const data = await API.auditList({
+          entity: f.entity || undefined,
+          action: f.action || undefined,
+          since:  f.since  || undefined,
+          until:  f.until  || undefined,
+          size:   f.size,
+          page:   page
+        });
+        renderAuditResult(result, data, f, loadAudit);
+      } catch (err) {
+        result.innerHTML = '';
+        result.appendChild(el('p', { class: 'error' },
+          'Could not load audit log: ' + (err.message || 'server error')));
+      }
+    }
+
+    // Initial load
+    loadAudit(1);
+  }
+
+  function renderAuditResult(container, data, filters, loadAudit) {
+    container.innerHTML = '';
+    const items = data.items || [];
+    const total = data.total || 0;
+    const page  = data.page  || 1;
+    const size  = data.size  || filters.size || 50;
+    const pages = Math.max(1, Math.ceil(total / size));
+
+    container.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'row between', style: 'align-items:center; margin-bottom:8px' }, [
+        el('p', { class: 'small muted', style: 'margin:0' },
+          total === 0
+            ? 'No events match these filters.'
+            : (total + ' event' + (total === 1 ? '' : 's') + ' — page ' + page + ' of ' + pages)),
+        items.length
+          ? el('button', { class: 'btn btn--sm btn--ghost', type: 'button',
+              onClick: () => downloadAuditCsv(items) }, 'Download CSV (this page)')
+          : null
+      ]),
+      items.length === 0
+        ? el('p', { class: 'empty' }, 'Nothing here yet — try widening the date range or clearing the entity filter.')
+        : renderTable(
+            ['When', 'Entity', 'Action', 'Title', 'Who'],
+            items.map((it) => [
+              fmtDate(it.at),
+              el('a', { href: auditEntityHref(it.entity) }, it.entity),
+              auditActionPill(it.action),
+              (function () {
+                const t = it.title || '(untitled)';
+                const sub = it.sub || '';
+                if (!sub) return t;
+                return el('span', null, [
+                  el('span', null, t),
+                  el('span', { class: 'small muted', style: 'margin-left:6px' }, '· ' + sub)
+                ]);
+              })(),
+              auditAuthorLabel(it.author)
+            ]),
+            null,
+            { searchPlaceholder: 'Filter this page… (' + items.length + ' rows)' }
+          )
+    ]));
+
+    // ----- Pagination strip -----
+    if (pages > 1) {
+      const strip = el('div', { class: 'row', style: 'gap:8px; margin-top:10px; align-items:center; justify-content:center' });
+      strip.appendChild(el('button', {
+        class: 'btn btn--ghost btn--sm', type: 'button', disabled: page <= 1,
+        onClick: () => loadAudit(page - 1)
+      }, '‹ Previous'));
+      strip.appendChild(el('span', { class: 'small muted' }, 'Page ' + page + ' / ' + pages));
+      strip.appendChild(el('button', {
+        class: 'btn btn--ghost btn--sm', type: 'button', disabled: page >= pages,
+        onClick: () => loadAudit(page + 1)
+      }, 'Next ›'));
+      container.appendChild(strip);
+    }
+  }
+
+  /** CSV export of the visible audit page — useful for ad-hoc forensics. */
+  function downloadAuditCsv(items) {
+    const header = ['When', 'Entity', 'Id', 'Action', 'Title', 'Sub', 'Author', 'Email'];
+    const lines = [header.join(',')];
+    items.forEach((it) => {
+      const who = auditAuthorLabel(it.author);
+      const email = (it.author && it.author.email) || '';
+      lines.push([
+        csvCell(fmtDate(it.at)), csvCell(it.entity), csvCell(it.id),
+        csvCell(it.action), csvCell(it.title || ''), csvCell(it.sub || ''),
+        csvCell(who), csvCell(email)
+      ].join(','));
+    });
+    // UTF-8 BOM so Excel detects accents correctly on Windows.
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ============================================================
@@ -2045,7 +2388,8 @@
       users: renderUsers,
       trainees: renderTrainees,
       cohorts: renderCohorts, groups: renderGroups, participants: renderParticipants,
-      sessions: renderSessions, stories: renderStories, reports: renderReports
+      sessions: renderSessions, stories: renderStories, reports: renderReports,
+      audit: renderAudit
     };
     (renderers[s] || renderDashboard)();
     // Close sidebar on mobile

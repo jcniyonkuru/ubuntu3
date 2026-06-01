@@ -93,7 +93,8 @@
   /**
    * Download any media bytes we should have but don't yet (best effort).
    * Happens after a pull, so stories another trainer captured become visible
-   * with their photos and audio on this device too.
+   * with their photos and audio on this device too. v0.3.8 — also fetches
+   * session photos when the server has them but this device doesn't.
    */
   async function downloadMissingMedia() {
     const stories = await DB.all('stories');
@@ -126,6 +127,32 @@
         }
       }
       if (changed) await DB.putClean('stories', s);
+    }
+    // v0.3.8 — session photos + voice notes
+    const sessions = await DB.all('sessions');
+    for (const sess of sessions) {
+      let changed = false;
+      if (sess.hasPhoto && !isBlobLike(sess.photo)) {
+        try {
+          sess.photo = await window.API.fetchMediaOn('sessions', sess.id, 'photo');
+          sess.photoUploaded = true;
+          changed = true; fetched++;
+        } catch (e) {
+          if (e && e.status === 404) { sess.hasPhoto = false; changed = true; }
+          failed++;
+        }
+      }
+      if (sess.hasAudio && !isBlobLike(sess.audio)) {
+        try {
+          sess.audio = await window.API.fetchMediaOn('sessions', sess.id, 'audio');
+          sess.audioUploaded = true;
+          changed = true; fetched++;
+        } catch (e) {
+          if (e && e.status === 404) { sess.hasAudio = false; changed = true; }
+          failed++;
+        }
+      }
+      if (changed) await DB.putClean('sessions', sess);
     }
     return { fetched, failed };
   }
@@ -192,6 +219,34 @@
       if ((needPhoto && okPhoto) || (needAudio && okAudio)) {
         await DB.putClean('stories', s);
       }
+    }
+    // v0.3.8 — session photos + voice notes. Mirrors the story path.
+    const sessions = await DB.all('sessions');
+    for (const sess of sessions) {
+      let touched = false;
+      if (isBlobLike(sess.photo) && !sess.photoUploaded) {
+        candidates++;
+        try {
+          await window.API.uploadMediaOn('sessions', sess.id, 'photo', sess.photo);
+          sess.photoUploaded = true; touched = true; uploaded++;
+          attempts.push({ id: sess.id.slice(0,8), kind: 'session-photo', size: sess.photo.size, ok: true });
+        } catch (e) {
+          console.warn('[ubuntu30 sync] session photo upload failed', sess.id.slice(0, 8), e);
+          attempts.push({ id: sess.id.slice(0,8), kind: 'session-photo', size: sess.photo.size, ok: false, error: String(e && e.message || e) });
+        }
+      }
+      if (isBlobLike(sess.audio) && !sess.audioUploaded) {
+        candidates++;
+        try {
+          await window.API.uploadMediaOn('sessions', sess.id, 'audio', sess.audio);
+          sess.audioUploaded = true; touched = true; uploaded++;
+          attempts.push({ id: sess.id.slice(0,8), kind: 'session-audio', size: sess.audio.size, ok: true });
+        } catch (e) {
+          console.warn('[ubuntu30 sync] session audio upload failed', sess.id.slice(0, 8), e);
+          attempts.push({ id: sess.id.slice(0,8), kind: 'session-audio', size: sess.audio.size, ok: false, error: String(e && e.message || e) });
+        }
+      }
+      if (touched) await DB.putClean('sessions', sess);
     }
     if (candidates > 0 || inspected.length > 0) {
       console.log('[ubuntu30 sync] uploadPendingMedia done — candidates:', candidates, 'uploaded:', uploaded);

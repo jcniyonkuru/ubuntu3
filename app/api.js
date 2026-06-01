@@ -118,7 +118,20 @@
       return call('POST', '/auth/reset-password', { body: { token, new_password: newPassword } });
     },
     async uploadMedia(storyId, kind, blob) {
-      const url = getBase() + '/stories/' + encodeURIComponent(storyId) + '/media/' + kind;
+      return this.uploadMediaOn('stories', storyId, kind, blob);
+    },
+    async fetchMedia(storyId, kind) {
+      return this.fetchMediaOn('stories', storyId, kind);
+    },
+    /**
+     * v0.3.8 — generalized media upload / fetch. `entity` is the URL
+     * segment for the parent record's media route — 'stories' for the
+     * existing story media, 'sessions' for session photos. The legacy
+     * uploadMedia / fetchMedia wrappers above keep the existing
+     * stories call sites working.
+     */
+    async uploadMediaOn(entity, id, kind, blob) {
+      const url = getBase() + '/' + entity + '/' + encodeURIComponent(id) + '/media/' + kind;
       const fd = new FormData();
       const ext = kind === 'photo' ? '.jpg' : '.webm';
       fd.append('file', blob, 'media' + ext);
@@ -139,10 +152,23 @@
       }
       return data;
     },
-    async fetchMedia(storyId, kind) {
+    async deleteMediaOn(entity, id, kind) {
+      const url = getBase() + '/' + entity + '/' + encodeURIComponent(id) + '/media/' + kind;
+      const token = getToken();
+      const resp = await fetch(url, {
+        method: 'DELETE',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+        credentials: 'omit'
+      });
+      if (!resp.ok) {
+        const e = new Error('HTTP ' + resp.status); e.status = resp.status; throw e;
+      }
+      try { return await resp.json(); } catch (e) { return null; }
+    },
+    async fetchMediaOn(entity, id, kind) {
       // POST + /get suffix so corporate proxies (Zscaler etc.) don't intercept
       // an authenticated GET and strip the Authorization header.
-      const url = getBase() + '/stories/' + encodeURIComponent(storyId) + '/media/' + kind + '/get';
+      const url = getBase() + '/' + entity + '/' + encodeURIComponent(id) + '/media/' + kind + '/get';
       const token = getToken();
       const resp = await fetch(url, {
         method: 'POST',

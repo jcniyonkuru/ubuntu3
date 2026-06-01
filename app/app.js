@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.7.1';
+  const APP_VERSION = '0.3.8';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -87,6 +87,164 @@
     return t('sex.nb');
   }
 
+  // v0.3.8 — Lightweight name similarity. Used by the "Did you mean…?"
+  // duplicate-name warning on the + Participant picker. Cheap and good
+  // enough for Burundi names (Latin script, varied diacritics).
+  function normalizeName(s) {
+    return (s || '').toString().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip diacritics
+      .replace(/[^a-z0-9 ]+/g, ' ')                     // strip punctuation
+      .replace(/\s+/g, ' ').trim();
+  }
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    const m = a.length, n = b.length;
+    const prev = new Array(n + 1);
+    for (let j = 0; j <= n; j++) prev[j] = j;
+    for (let i = 1; i <= m; i++) {
+      let cur = i;
+      for (let j = 1; j <= n; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        const next = Math.min(prev[j] + 1, cur + 1, prev[j - 1] + cost);
+        prev[j - 1] = cur;
+        cur = next;
+      }
+      prev[n] = cur;
+    }
+    return prev[n];
+  }
+  // v0.3.8 — Hand-rolled SVG attendance trend chart. Returns a card
+  // node (or null when the course is too sparse to chart). Lives next
+  // to the at-risk pill since both use the same per-course attendance
+  // index. No external dependency: the chart is straight SVG so it
+  // works offline and stays under a few KB.
+  function makeAttendanceTrendCard(sessionsAsc, courseAtt, activeRoster) {
+    if (!sessionsAsc.length || activeRoster.length === 0) return null;
+    const points = sessionsAsc.map((s) => {
+      let present = 0;
+      for (const p of activeRoster) {
+        const m = courseAtt.get(p.id);
+        const rec = m && m.get(s.id);
+        if (rec && rec.present) present++;
+      }
+      return { date: s.date, pct: (present / activeRoster.length) * 100, present };
+    });
+    const avg = Math.round(points.reduce((sum, p) => sum + p.pct, 0) / points.length);
+
+    const W = 320, H = 140;
+    const padL = 30, padR = 10, padT = 12, padB = 26;
+    const cw = W - padL - padR;
+    const ch = H - padT - padB;
+    const xFor = (i) => padL + (points.length > 1 ? (cw * i) / (points.length - 1) : cw / 2);
+    const yFor = (pct) => padT + ch - (pct / 100) * ch;
+
+    const parts = [];
+    // Background grid + Y labels (0 / 50 / 100 %)
+    [0, 50, 100].forEach((pct) => {
+      const y = yFor(pct);
+      parts.push(
+        '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
+        '" stroke="#E5E5E7" stroke-width="1"/>'
+      );
+      parts.push(
+        '<text x="' + (padL - 6) + '" y="' + (y + 3.5) +
+        '" text-anchor="end" font-size="9" fill="#9a9a9e">' + pct + '%</text>'
+      );
+    });
+    // Build the line path
+    const pathD = points.map((p, i) => (i ? 'L' : 'M') + xFor(i) + ',' + yFor(p.pct)).join(' ');
+    // Soft fill underneath the line so trends read at a glance
+    const areaD = pathD +
+      ' L' + xFor(points.length - 1) + ',' + yFor(0) +
+      ' L' + xFor(0) + ',' + yFor(0) + ' Z';
+    parts.push('<path d="' + areaD + '" fill="var(--brand-tint)" opacity="0.55"/>');
+    parts.push('<path d="' + pathD + '" stroke="var(--brand)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
+    // Dots on each session
+    points.forEach((p, i) => {
+      parts.push(
+        '<circle cx="' + xFor(i) + '" cy="' + yFor(p.pct) +
+        '" r="2.8" fill="var(--brand)"><title>' +
+        formatDate(p.date) + ' — ' + Math.round(p.pct) + '%</title></circle>'
+      );
+    });
+    // X-axis labels: first and last date
+    const fmtShort = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      try {
+        return d.toLocaleDateString(window.I18N.dateLocale(), { day: '2-digit', month: 'short' });
+      } catch (e) { return iso; }
+    };
+    parts.push(
+      '<text x="' + xFor(0) + '" y="' + (H - 8) +
+      '" text-anchor="middle" font-size="10" fill="#9a9a9e">' + fmtShort(points[0].date) + '</text>'
+    );
+    if (points.length > 1) {
+      parts.push(
+        '<text x="' + xFor(points.length - 1) + '" y="' + (H - 8) +
+        '" text-anchor="middle" font-size="10" fill="#9a9a9e">' +
+        fmtShort(points[points.length - 1].date) + '</text>'
+      );
+    }
+    const svg =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="trend-chart" ' +
+      'role="img" aria-label="' + t('group.trendAria') + '">' +
+      parts.join('') + '</svg>';
+
+    return el('div', { class: 'card trend-card' }, [
+      el('div', { class: 'row between', style: 'gap:12px; align-items:flex-start' }, [
+        el('div', { class: 'grow', style: 'min-width:0' }, [
+          el('div', { class: 'card__title' }, t('group.trendTitle')),
+          el('div', { class: 'card__sub' }, t('group.trendAvg', { avg: avg }))
+        ])
+      ]),
+      el('div', { class: 'trend-chart-wrap', html: svg })
+    ]);
+  }
+
+  // v0.3.8 — leading-indicator for M&E coordinators: count the most
+  // recent consecutive recorded absences. We walk the sessions newest-
+  // first and stop on the first present=true OR the first session with
+  // no recorded attendance (treating "not yet recorded" as a gap rather
+  // than an absence — otherwise a trainer who forgot to mark attendance
+  // would silently flag the whole roster).
+  const AT_RISK_STREAK = 3;
+  function absenceStreak(participantId, sortedSessionsDesc, attByPart) {
+    const recs = attByPart.get(participantId);
+    if (!recs) return 0;
+    let streak = 0;
+    for (const s of sortedSessionsDesc) {
+      const rec = recs.get(s.id);
+      if (!rec) break;        // unrecorded — stop counting (don't penalise)
+      if (rec.present) break; // present → streak ends
+      streak++;
+    }
+    return streak;
+  }
+
+  // Find the closest match (if any) among `candidates`. We compare the
+  // new name in both "first last" and "last first" order to forgive
+  // trainees whose order the trainer flips. Threshold scales with
+  // length so short names (e.g. "Eric") require a closer match.
+  function findSimilarParticipant(newFirst, newLast, candidates) {
+    const newKey = normalizeName(newFirst + ' ' + newLast);
+    const newRev = normalizeName(newLast + ' ' + newFirst);
+    if (!newKey) return null;
+    let best = null, bestDist = Infinity;
+    for (const c of candidates) {
+      const cKey = normalizeName((c.firstName || '') + ' ' + (c.lastName || ''));
+      if (!cKey) continue;
+      const d = Math.min(levenshtein(newKey, cKey), levenshtein(newRev, cKey));
+      const maxLen = Math.max(newKey.length, cKey.length);
+      const cap = maxLen >= 12 ? 3 : maxLen >= 7 ? 2 : maxLen >= 4 ? 1 : 0;
+      if (d <= cap && d < bestDist) { best = c; bestDist = d; }
+    }
+    return best;
+  }
+
   // ---------- list-row thumbnails ----------
   // SVG glyphs mirror the bottom tab bar so every list row carries the
   // same visual cue as the tab it belongs to. Story rows prefer the
@@ -128,6 +286,23 @@
     wrap.appendChild(img);
     return wrap;
   }
+  // v0.3.8 — Session thumbnail. Prefers the attached photo Blob (the
+  // "visual proof at the start of the session") and falls back to the
+  // generic calendar/icon when none is attached. hasPhoto without a
+  // local Blob still falls back to the icon; the sync engine will
+  // fetch the bytes on the next pass and the next render will show
+  // them.
+  function sessionThumb(s) {
+    if (s && s.photo) {
+      const wrap = el('div', { class: 'thumb' });
+      const img  = el('img', { alt: '' });
+      img.src = URL.createObjectURL(s.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      wrap.appendChild(img);
+      return wrap;
+    }
+    return thumbIcon('sessions');
+  }
   // iOS-Calls-style row of round action buttons. Each item:
   //   { key, icon, label, href? | onClick? }
   // Renders as a horizontal scroll strip — useful under the search pill
@@ -139,7 +314,10 @@
     plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>',
     walkIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.4 0-2.6-.7-3.4-1.8l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
     course: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="6" cy="7" r="1.4" fill="currentColor"/><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="6" cy="17" r="1.4" fill="currentColor"/></svg>',
-    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>'
+    story: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>',
+    checkAll: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M0 11.06 1.41 9.65l3.59 3.59 1.41 1.41-1.41 1.42L0 11.06zm12-1.41L17.66 4 19.07 5.41 13.41 11.07 12 9.66zM5 18l-5-5 1.41-1.41L5 15.17l11.59-11.58L18 5l-13 13z"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2s-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2 1.43 3.2 3.2 3.2zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>'
   };
   function actionCircles(items) {
     const row = el('div', { class: 'action-circles' });
@@ -980,6 +1158,139 @@
     root.appendChild(form);
   }
 
+  // ============================================================
+  //  First-run tour — v0.3.8
+  //  4-step coachmark series fired the first time a non-admin user
+  //  lands on the dashboard. Each step spotlights one tab in the
+  //  bottom tab bar (Dashboard → Sessions → Stories → More) and shows
+  //  a tooltip explaining what lives there. Persisted in localStorage
+  //  so it never shows again. Replayable from the More tab.
+  // ============================================================
+  const TOUR_KEY = 'ubuntu30.tourSeen';
+  const TOUR_STEPS = [
+    { tab: 'dashboard', titleKey: 'tour.step1.title', bodyKey: 'tour.step1.body' },
+    { tab: 'sessions',  titleKey: 'tour.step2.title', bodyKey: 'tour.step2.body' },
+    { tab: 'stories',   titleKey: 'tour.step3.title', bodyKey: 'tour.step3.body' },
+    { tab: 'more',      titleKey: 'tour.step4.title', bodyKey: 'tour.step4.body' }
+  ];
+  function tourSeen() {
+    try { return localStorage.getItem(TOUR_KEY) === '1'; } catch (e) { return false; }
+  }
+  function markTourSeen() {
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {}
+  }
+  function clearTourSeen() {
+    try { localStorage.removeItem(TOUR_KEY); } catch (e) {}
+  }
+  /** Called from dashboardView after the first render. No-op if already seen. */
+  function maybeStartTour() {
+    if (tourSeen()) return;
+    // Belt-and-suspenders: admins use the admin web view, not the PWA,
+    // but if one ever lands here we skip the tour.
+    if (CURRENT_AUTHOR && CURRENT_AUTHOR.role === 'admin') return;
+    // Give the tab bar a beat to finish laying out before we measure.
+    setTimeout(() => { startTour(); }, 300);
+  }
+  /** Public entry point — used by the "Replay tour" button in More. */
+  function startTour() {
+    // Clear any previous overlay so re-entry is safe.
+    document.querySelectorAll('.tour-backdrop, .tour-spotlight, .tour-coachmark').forEach((n) => n.remove());
+
+    let i = 0;
+    const backdrop  = el('div', { class: 'tour-backdrop' });
+    const spotlight = el('div', { class: 'tour-spotlight' });
+    const coachmark = el('div', { class: 'tour-coachmark' });
+    document.body.appendChild(backdrop);
+    document.body.appendChild(spotlight);
+    document.body.appendChild(coachmark);
+
+    function finish() {
+      markTourSeen();
+      backdrop.remove(); spotlight.remove(); coachmark.remove();
+      window.removeEventListener('resize', position);
+      window.removeEventListener('orientationchange', position);
+    }
+    // A tap on the dimmed backdrop counts as "skip" — matches platform habits.
+    backdrop.addEventListener('click', finish);
+
+    function position() {
+      const step = TOUR_STEPS[i];
+      const target = document.querySelector('.tabbar .tab[data-tab="' + step.tab + '"]');
+      if (!target) {
+        // Tab not in the DOM (e.g. hidden via Settings). Skip ahead.
+        i++;
+        if (i >= TOUR_STEPS.length) { finish(); return; }
+        position();
+        return;
+      }
+      const r = target.getBoundingClientRect();
+      const pad = 6;
+      spotlight.style.top    = (r.top    - pad) + 'px';
+      spotlight.style.left   = (r.left   - pad) + 'px';
+      spotlight.style.width  = (r.width  + pad * 2) + 'px';
+      spotlight.style.height = (r.height + pad * 2) + 'px';
+
+      // Coachmark sits above the tab bar, horizontally centred on the target,
+      // clamped to the viewport edges so it never spills off-screen.
+      const cmW = Math.min(320, window.innerWidth - 24);
+      const cmRect = coachmark.getBoundingClientRect();
+      const cmH = cmRect.height || 140;
+      let cmLeft = r.left + r.width / 2 - cmW / 2;
+      cmLeft = Math.max(12, Math.min(cmLeft, window.innerWidth - cmW - 12));
+      let cmTop = r.top - cmH - 16;
+      if (cmTop < 12) cmTop = r.bottom + 16;   // No room above? Drop below.
+      coachmark.style.width = cmW + 'px';
+      coachmark.style.left  = cmLeft + 'px';
+      coachmark.style.top   = cmTop  + 'px';
+
+      // Arrow points at the target. If the coachmark is below the target,
+      // flip the arrow so it points up instead.
+      const arrow = coachmark.querySelector('.tour-coachmark__arrow');
+      if (arrow) {
+        const arrowLeft = (r.left + r.width / 2) - cmLeft;
+        arrow.style.left = arrowLeft + 'px';
+        if (cmTop > r.top) {
+          arrow.style.bottom = 'auto';
+          arrow.style.top    = '-7px';
+        } else {
+          arrow.style.top    = 'auto';
+          arrow.style.bottom = '-7px';
+        }
+      }
+    }
+
+    function render() {
+      const step = TOUR_STEPS[i];
+      const isLast = i === TOUR_STEPS.length - 1;
+      coachmark.innerHTML = '';
+      coachmark.appendChild(el('p', { class: 'tour-coachmark__progress' },
+        t('tour.progress', { n: i + 1, total: TOUR_STEPS.length })));
+      coachmark.appendChild(el('h3', { class: 'tour-coachmark__title' }, t(step.titleKey)));
+      coachmark.appendChild(el('p',  { class: 'tour-coachmark__body'  }, t(step.bodyKey)));
+      coachmark.appendChild(el('div', { class: 'tour-coachmark__actions' }, [
+        el('button', {
+          class: 'tour-coachmark__skip', type: 'button',
+          onClick: finish
+        }, t('tour.skip')),
+        el('button', {
+          class: 'tour-coachmark__next', type: 'button',
+          onClick: () => {
+            if (isLast) { finish(); return; }
+            i++;
+            render();
+          }
+        }, isLast ? t('tour.gotIt') : t('tour.next'))
+      ]));
+      coachmark.appendChild(el('div', { class: 'tour-coachmark__arrow' }));
+      // Reposition after layout — the coachmark height isn't known until paint.
+      requestAnimationFrame(position);
+    }
+
+    window.addEventListener('resize', position);
+    window.addEventListener('orientationchange', position);
+    render();
+  }
+
   // ---------- Dashboard ----------
   async function dashboardView(_params, root) {
     setTitle(t('dash.title'));
@@ -1180,6 +1491,10 @@
         ])
       ]));
     }
+
+    // First-run tour — no-op if already seen, otherwise fires after a short
+    // delay so the tab bar is settled and we can measure the target tab.
+    maybeStartTour();
   }
 
   function tile(label, value, sub, barPct) {
@@ -1654,6 +1969,30 @@
       }]));
     }
 
+    // v0.3.8 — Load attendance once for this course so each participant
+    // row can compute its current absence streak (for the "At-risk"
+    // pill) without N round-trips to IndexedDB. Walk-in rows belong to
+    // a specific session so they don't contaminate the regular
+    // participant streak calculation.
+    const courseAtt = new Map(); // participantId → Map<sessionId, rec>
+    for (const sess of sessions) {
+      const recs = await DB.byIndex('attendance', 'sessionId', sess.id);
+      for (const rec of recs) {
+        if (rec.walkIn) continue;
+        let m = courseAtt.get(rec.participantId);
+        if (!m) { m = new Map(); courseAtt.set(rec.participantId, m); }
+        m.set(rec.sessionId, rec);
+      }
+    }
+
+    // v0.3.8 — Attendance trend chart. Built from the per-course
+    // attendance index above so the calculation is essentially free.
+    // Skipped when there's no roster or no sessions.
+    const sessionsAsc = sessions.slice().reverse();
+    const activeRoster = participants.filter((p) => p.status !== 'dropped');
+    const trendCard = makeAttendanceTrendCard(sessionsAsc, courseAtt, activeRoster);
+    if (trendCard) root.appendChild(trendCard);
+
     // Participants live in their own section so we can scope a search bar
     // to them only — the sessions block below stays unfiltered.
     const partsSection = el('div', { class: 'course-participants' });
@@ -1677,6 +2016,11 @@
       sorted.forEach((p) => {
         const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
         const isDropped = p.status === 'dropped';
+        // v0.3.8 — at-risk pill when the participant has 3+ consecutive
+        // recorded absences. Dropped trainees are already off the active
+        // roster so the pill would be noise.
+        const streak = !isDropped ? absenceStreak(p.id, sessions, courseAtt) : 0;
+        const atRisk = streak >= AT_RISK_STREAK;
         // Moodle pill — flag enrolees that came from Ubuntu eLearning so
         // the trainer doesn't accidentally edit/delete a synced record.
         // Mirrors the pill shown on courses and sessions.
@@ -1685,6 +2029,11 @@
           p.source === 'moodle'
             ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
             : null,
+          atRisk ? el('span', {
+            class: 'pill pill--at-risk',
+            style: 'margin-left:8px;font-size:11px',
+            title: t('p.atRiskTooltip', { n: streak })
+          }, t('p.atRiskPill')) : null,
           isDropped ? el('span', {
             class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
@@ -1740,7 +2089,7 @@
       sessions.forEach((s) => {
         sessSection.appendChild(el('a', { class: 'card-link course-session', href: `#/sessions/${s.id}` }, [
           el('div', { class: 'list-item' }, [
-            thumbIcon('sessions'),
+            sessionThumb(s),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, s.theme || t('common.noTheme')),
               el('div', { class: 'list-item__sub' }, formatDate(s.date))
@@ -1759,6 +2108,31 @@
       else sessSection.appendChild(sessActions);
     }
     root.appendChild(sessSection);
+
+    // v0.3.8 — PWA-side CSV export. Two compact buttons at the bottom
+    // of the course so trainers can hand a donor an attendance roster
+    // or a stories digest on the spot. Loaded data is reused — we
+    // only fetch the per-course stories here.
+    const flatAttendance = [];
+    courseAtt.forEach((m, partId) => {
+      m.forEach((rec) => flatAttendance.push(rec));
+    });
+    const courseStories = (await DB.all('stories')).filter((s) =>
+      (s.sessionId && sessions.some((x) => x.id === s.sessionId)) ||
+      (s.participantId && participants.some((x) => x.id === s.participantId))
+    );
+    root.appendChild(el('div', {
+      class: 'row', style: 'gap:8px; margin-top:16px; flex-wrap:wrap'
+    }, [
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => exportCourseAttendanceCsv(group, participants, sessionsAsc, flatAttendance)
+      }, t('csv.attendanceCta')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => exportCourseStoriesCsv(group, sessionsAsc, participants, courseStories)
+      }, t('csv.storiesCta'))
+    ]));
   }
 
   // ---------- All Groups (flat list across cohorts) ----------
@@ -1874,6 +2248,27 @@
     const groups = await DB.all('groups');
     const groupsById = new Map(groups.map((g) => [g.id, g]));
 
+    // v0.3.8 — build attendance + sessions indices once so each row
+    // can compute its own at-risk streak. Group attendance / sessions
+    // by groupId so the absenceStreak() call only sees the right
+    // course's history. Walk-in attendance excluded.
+    const allSessions = await DB.all('sessions');
+    const sessionsByGroup = new Map();   // groupId → sessions desc
+    allSessions.forEach((s) => {
+      const arr = sessionsByGroup.get(s.groupId) || [];
+      arr.push(s);
+      sessionsByGroup.set(s.groupId, arr);
+    });
+    sessionsByGroup.forEach((arr) => arr.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+    const allAttendance = await DB.all('attendance');
+    const attByPart = new Map();          // participantId → Map<sessionId, rec>
+    allAttendance.forEach((rec) => {
+      if (rec.walkIn) return;
+      let m = attByPart.get(rec.participantId);
+      if (!m) { m = new Map(); attByPart.set(rec.participantId, m); }
+      m.set(rec.sessionId, rec);
+    });
+
     root.appendChild(el('p', { class: 'muted' }, tn(participants.length, 'participantsList.countOne', 'participantsList.countOther')));
 
     participants.forEach((p) => {
@@ -1884,11 +2279,20 @@
         group ? group.name : null
       ].filter(Boolean).join(' · ');
       const isDropped = p.status === 'dropped';
+      const streak = !isDropped
+        ? absenceStreak(p.id, sessionsByGroup.get(p.groupId) || [], attByPart)
+        : 0;
+      const atRisk = streak >= AT_RISK_STREAK;
       const titleNode = el('div', { class: 'list-item__title' }, [
         document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
         p.source === 'moodle'
           ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
           : null,
+        atRisk ? el('span', {
+          class: 'pill pill--at-risk',
+          style: 'margin-left:8px;font-size:11px',
+          title: t('p.atRiskTooltip', { n: streak })
+        }, t('p.atRiskPill')) : null,
         isDropped
           ? el('span', { class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)' }, t('p.statusDropped'))
           : null
@@ -2035,6 +2439,45 @@
       class: 'btn btn--ghost btn--block', type: 'button',
       style: 'margin-top:16px'
     }, t('picker.createNewCta'));
+    // v0.3.8 — duplicate-name warning. We compute candidates from the
+    // already-enrolled participants once when the picker renders, then
+    // re-check inside the submit handler. dupBypass lets the trainer
+    // proceed after acknowledging the warning ("Create anyway").
+    const enrolledForDupCheck = await DB.byIndex('participants', 'groupId', group.id);
+    let dupBypass = false;
+    const dupPanel = el('div', { class: 'card dup-suggestion', hidden: true, style: 'margin-top:8px' });
+    function showDupSuggestion(p) {
+      dupPanel.innerHTML = '';
+      const fullName = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName');
+      const sub = [sexLabel(p.sex), p.ageRange || '', p.contact || ''].filter(Boolean).join(' · ');
+      dupPanel.appendChild(el('h4', { style: 'margin:0 0 4px' }, t('picker.dupTitle')));
+      dupPanel.appendChild(el('p', { class: 'small muted', style: 'margin:0 0 10px' }, t('picker.dupBody')));
+      dupPanel.appendChild(el('div', { class: 'list-item', style: 'margin-bottom:10px' }, [
+        thumbIcon('participants'),
+        el('div', { class: 'grow' }, [
+          el('div', { class: 'list-item__title' }, fullName),
+          el('div', { class: 'list-item__sub' }, sub || t('common.noDetails'))
+        ])
+      ]));
+      dupPanel.appendChild(el('div', { class: 'row', style: 'gap:8px; flex-wrap:wrap; justify-content:flex-end' }, [
+        el('a', {
+          class: 'btn btn--sm', href: '#/participants/' + p.id + '/edit',
+          onClick: () => { dupPanel.hidden = true; dupBypass = false; }
+        }, t('picker.dupUseExisting')),
+        el('button', {
+          class: 'btn btn--sm btn--ghost', type: 'button',
+          onClick: () => {
+            dupBypass = true;
+            dupPanel.hidden = true;
+            // Re-fire the submit programmatically so the same field
+            // values + validation path runs again, this time skipping
+            // the dup check.
+            createForm.requestSubmit();
+          }
+        }, t('picker.dupCreateAnyway'))
+      ]));
+      dupPanel.hidden = false;
+    }
     const createForm = el('form', {
       class: 'card', style: 'margin-top:8px', hidden: true,
       onSubmit: async (e) => {
@@ -2051,6 +2494,16 @@
         if (!email || !sex || !ageRange) {
           toast(t('picker.createNewMissing'));
           return;
+        }
+        // v0.3.8 — catch likely typos / duplicate enrolments before we
+        // create a brand-new user. Skipped when the trainer already
+        // confirmed via "Create anyway" on the suggestion panel.
+        if (!dupBypass) {
+          const dup = findSimilarParticipant(firstName, lastName, enrolledForDupCheck);
+          if (dup) {
+            showDupSuggestion(dup);
+            return;
+          }
         }
         const submit = createForm.querySelector('button[type=submit]');
         submit.disabled = true;
@@ -2097,8 +2550,122 @@
       createForm.hidden = false; createBtn.hidden = true;
       const fn = createForm.elements['firstName']; if (fn) fn.focus();
     });
+    // Whenever the trainer edits either name field we reset the bypass
+    // flag and tuck the suggestion panel away — they may have noticed
+    // the typo and corrected it, and we want the check to re-run.
+    ['firstName', 'lastName'].forEach((name) => {
+      const input = createForm.elements[name];
+      if (input) input.addEventListener('input', () => {
+        dupBypass = false;
+        dupPanel.hidden = true;
+      });
+    });
     root.appendChild(createBtn);
     root.appendChild(createForm);
+    root.appendChild(dupPanel);
+  }
+
+  // v0.3.8 — Participant attendance certificate. Print-friendly route
+  // mounted at /participants/:id/certificate. Trainer taps "Generate
+  // certificate" on the participant edit form, browser print dialog
+  // saves it as a PDF. Stays useable offline because everything is
+  // computed from the local IndexedDB.
+  async function certificateView(params, root) {
+    const p = await DB.get('participants', params.id);
+    if (!p) { root.appendChild(notFoundView()); return; }
+    const group = await DB.get('groups', p.groupId);
+    if (!group) { root.appendChild(notFoundView()); return; }
+    const cohort = group.cohortId ? await DB.get('cohorts', group.cohortId) : null;
+    setTitle(t('cert.title'));
+
+    // Build the attended-sessions list. Walk-ins excluded (they're
+    // session-scoped, not a course attendance record).
+    const allSessions = (await DB.byIndex('sessions', 'groupId', group.id))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const myAttendance = (await DB.byIndex('attendance', 'participantId', p.id))
+      .filter((a) => !a.walkIn);
+    const presentByDate = myAttendance.filter((a) => a.present);
+    const presentSessions = allSessions.filter((s) =>
+      presentByDate.some((a) => a.sessionId === s.id));
+
+    const fullName = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName');
+    const startDate = allSessions.length ? allSessions[0].date : null;
+    const endDate   = allSessions.length ? allSessions[allSessions.length - 1].date : null;
+    const todayStr  = formatDate(new Date().toISOString());
+
+    // Toggle a body-level class so the print stylesheet hides the
+    // app header / tab bar. Cleared on the next route change so the
+    // rest of the app keeps its chrome.
+    document.body.classList.add('certificate-mode');
+    const cleanup = () => document.body.classList.remove('certificate-mode');
+    window.addEventListener('hashchange', cleanup, { once: true });
+
+    const page = el('div', { class: 'certificate-page' });
+
+    // ---- on-screen action strip (hidden when printing) ----
+    page.appendChild(el('div', { class: 'cert-actions no-print' }, [
+      el('button', {
+        class: 'btn', type: 'button',
+        onClick: () => window.print()
+      }, t('cert.print')),
+      el('a', { class: 'btn btn--ghost', href: '#/participants/' + p.id + '/edit' }, t('common.back'))
+    ]));
+
+    // ---- header / brand ----
+    page.appendChild(el('header', { class: 'cert-brand' }, [
+      el('img', { src: 'logo.png', alt: '', class: 'cert-brand__logo' }),
+      el('div', { class: 'cert-brand__name' }, t('cert.org'))
+    ]));
+
+    // ---- body ----
+    page.appendChild(el('h1', { class: 'cert-title' }, t('cert.heading')));
+    page.appendChild(el('p',  { class: 'cert-intro' }, t('cert.intro')));
+    page.appendChild(el('p',  { class: 'cert-name' }, fullName));
+    page.appendChild(el('p',  { class: 'cert-body' }, [
+      document.createTextNode(t('cert.bodyPrefix') + ' '),
+      el('strong', null, group.name || t('common.noName')),
+      cohort ? document.createTextNode(' (' + cohort.name + ')') : null,
+      document.createTextNode(
+        startDate && endDate
+          ? ' ' + t('cert.bodyDates', { from: formatDate(startDate), to: formatDate(endDate) })
+          : ''
+      ),
+      document.createTextNode('.')
+    ]));
+
+    page.appendChild(el('p', { class: 'cert-stats' }, [
+      document.createTextNode(t('cert.statsPrefix') + ' '),
+      el('strong', null, String(presentSessions.length)),
+      document.createTextNode(' / ' + allSessions.length + ' ' + t('cert.statsSuffix') + '.')
+    ]));
+
+    // ---- attended sessions list ----
+    if (presentSessions.length) {
+      page.appendChild(el('h3', { class: 'cert-list-title' }, t('cert.sessionsHeading')));
+      const ul = el('ul', { class: 'cert-session-list' });
+      presentSessions.forEach((s) => {
+        ul.appendChild(el('li', null, [
+          el('strong', null, formatDate(s.date)),
+          document.createTextNode(' — ' + (s.theme || t('common.noTheme'))),
+          s.location ? document.createTextNode(' · ' + s.location) : null
+        ]));
+      });
+      page.appendChild(ul);
+    }
+
+    // ---- footer (date + signature line) ----
+    page.appendChild(el('footer', { class: 'cert-sign' }, [
+      el('div', { class: 'cert-sign__col' }, [
+        el('div', { class: 'cert-sign__line' }),
+        el('div', { class: 'cert-sign__label' }, t('cert.signSignature'))
+      ]),
+      el('div', { class: 'cert-sign__col' }, [
+        el('div', { class: 'cert-sign__line' }, todayStr),
+        el('div', { class: 'cert-sign__label' }, t('cert.signDate'))
+      ])
+    ]));
+
+    root.appendChild(page);
   }
 
   async function participantFormView(params, root) {
@@ -2164,6 +2731,16 @@
       el('button', { class: 'btn btn--block', type: 'submit' }, isEdit ? t('common.save') : t('common.add'))
     ]);
     root.appendChild(form);
+
+    // v0.3.8 — Generate certificate link. Available on every existing
+    // participant; the certificate view shows 0 sessions cleanly when
+    // there's no attendance yet (mostly used at end of course).
+    if (isEdit) {
+      root.appendChild(el('a', {
+        class: 'btn btn--ghost btn--block', style: 'margin-top:12px',
+        href: '#/participants/' + p.id + '/certificate'
+      }, t('p.certCta')));
+    }
 
     // Synced participants can't be removed from the PWA — unenroll them in Moodle
     // v0.3.5d — participants who were marked PRESENT at any session can't be
@@ -2305,7 +2882,7 @@
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
         el('div', { class: 'card' }, [
           el('div', { class: 'row between' }, [
-            thumbIcon('sessions'),
+            sessionThumb(s),
             el('div', { class: 'grow', style: 'min-width:0' }, [
               titleRow,
               el('div', { class: 'card__sub' }, [formatDate(s.date), groupName(s.groupId), s.location].filter(Boolean).join(' · '))
@@ -2359,7 +2936,16 @@
 
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
-      // Only update editable fields when synced — keep the upstream values intact
+      // Defensive: when navigating in from /sessions/new (no groupId in
+      // URL), some browsers leave the <select required> with an empty
+      // .value until the user explicitly interacts with it, which silently
+      // blocks the create. Forcing the first option here makes the
+      // "Create" tap from the Sessions list behave like the one from a
+      // course detail page.
+      const sel = form.elements['groupId'];
+      if (!synced && sel && !sel.value && sel.options.length) {
+        sel.selectedIndex = 0;
+      }
       if (!synced) {
         session.groupId = form.elements['groupId'].value;
         session.date = form.elements['date'].value;
@@ -2367,8 +2953,17 @@
       }
       session.location = form.elements['location'].value.trim();
       session.notes = form.elements['notes'].value.trim();
-      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      // Wrap in try/catch so any DB / sync error surfaces as a toast
+      // instead of silently looking like "the button does nothing".
+      try {
+        await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      } catch (err) {
+        console.error('[ubuntu30] session save failed', err);
+        toast((err && err.message) || t('common.error'));
+        return;
+      }
       toast(isEdit ? t('session.updated') : t('session.created'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
       go('/sessions/' + session.id);
     } }, [
       synced ? el('div', { class: 'synced-banner', html: t('sync.bannerSession') }) : null,
@@ -2436,6 +3031,215 @@
       go('/sessions/' + dup.id + '/edit');
     }
 
+    // v0.3.8 — session photo banner (visual proof). Renders above the
+    // header card when there's a local Blob. The action circle below
+    // captures / replaces the photo; the X overlay on the banner
+    // deletes it locally and on the server (best effort if offline).
+    const photoBanner = el('div', { class: 'session-photo-banner', hidden: true });
+    async function deletePhoto() {
+      if (!confirm(t('session.photoDeleteConfirm'))) return;
+      // Best-effort server delete first so we don't leave an orphan
+      // file when the row's hasPhoto flips to 0.
+      if (navigator.onLine && session.hasPhoto) {
+        try {
+          await window.API.deleteMediaOn('sessions', session.id, 'photo');
+        } catch (e) {
+          console.warn('[ubuntu30] session photo server delete failed', e);
+          // Continue with local delete — sync engine will eventually
+          // resync the hasPhoto=0 row, and the orphan file can be
+          // cleaned by a future maintenance pass.
+        }
+      }
+      session.photo = null;
+      session.hasPhoto = false;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoDeleted'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    }
+    // v0.3.8 — Crop position is stored on session.photoPosition as the
+    // CSS object-position string ("X% Y%"). Default is centered. Drag
+    // the image inside the banner to choose which part is visible;
+    // the new value is persisted on pointer up.
+    function parsePos(str) {
+      const m = String(str || '').match(/(-?\d+(?:\.\d+)?)%\s+(-?\d+(?:\.\d+)?)%/);
+      return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : { x: 50, y: 50 };
+    }
+    function renderPhotoBanner() {
+      photoBanner.innerHTML = '';
+      if (!session.photo) { photoBanner.hidden = true; return; }
+      const pos = parsePos(session.photoPosition);
+      let posX = pos.x, posY = pos.y;
+
+      const img = el('img', { alt: '' });
+      img.style.objectPosition = posX + '% ' + posY + '%';
+      img.src = URL.createObjectURL(session.photo);
+      img.onload = () => URL.revokeObjectURL(img.src);
+
+      // Drag-to-reposition. Uses pointer events so one path covers
+      // mouse + touch + pen. We anchor on the values at pointerdown,
+      // then translate finger delta into a percentage of the banner
+      // box so movement feels natural regardless of phone width.
+      let dragging = false;
+      let startX = 0, startY = 0, startPosX = 50, startPosY = 50;
+      img.addEventListener('pointerdown', (e) => {
+        // Ignore the right-mouse / middle button so this stays a
+        // primary-tap gesture.
+        if (e.button !== undefined && e.button !== 0) return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPosX = posX; startPosY = posY;
+        try { img.setPointerCapture(e.pointerId); } catch (err) {}
+        img.classList.add('is-dragging');
+        e.preventDefault();
+      });
+      img.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const rect = photoBanner.getBoundingClientRect();
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        // Drag the image rightward (dx>0) → reveal more of the LEFT
+        // side of the photo → object-position X decreases.
+        posX = Math.max(0, Math.min(100, startPosX - (dx / rect.width)  * 100));
+        posY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
+        img.style.objectPosition = posX + '% ' + posY + '%';
+      });
+      async function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        try { img.releasePointerCapture(e.pointerId); } catch (err) {}
+        img.classList.remove('is-dragging');
+        // Persist the final crop. No-op if it matches what was already stored.
+        const next = posX.toFixed(1) + '% ' + posY.toFixed(1) + '%';
+        if (next !== (session.photoPosition || '50.0% 50.0%')) {
+          session.photoPosition = next;
+          await DB.put('sessions', session, CURRENT_AUTHOR.id);
+        }
+      }
+      img.addEventListener('pointerup', endDrag);
+      img.addEventListener('pointercancel', endDrag);
+
+      photoBanner.appendChild(img);
+      photoBanner.appendChild(el('button', {
+        type: 'button',
+        class: 'session-photo-banner__delete',
+        'aria-label': t('session.photoDelete'),
+        title: t('session.photoDelete'),
+        html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        onClick: deletePhoto
+      }));
+      photoBanner.hidden = false;
+    }
+    renderPhotoBanner();
+    root.appendChild(photoBanner);
+
+    // v0.3.8 — voice note strip. Sits right below the photo banner.
+    // The recording handler lives on the "Voice" action circle below.
+    const audioStrip = el('div', { class: 'session-audio-strip', hidden: true });
+    async function deleteAudio() {
+      if (!confirm(t('session.audioDeleteConfirm'))) return;
+      if (navigator.onLine && session.hasAudio) {
+        try {
+          await window.API.deleteMediaOn('sessions', session.id, 'audio');
+        } catch (e) {
+          console.warn('[ubuntu30] session audio server delete failed', e);
+        }
+      }
+      session.audio = null;
+      session.hasAudio = false;
+      session.audioUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderAudioStrip();
+      toast(t('session.audioDeleted'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    }
+    function renderAudioStrip() {
+      audioStrip.innerHTML = '';
+      if (!session.audio) { audioStrip.hidden = true; return; }
+      const player = el('audio', { controls: '', preload: 'metadata' });
+      player.src = URL.createObjectURL(session.audio);
+      // Revoke the ObjectURL once the player has loaded metadata to avoid
+      // leaking memory. The audio bytes stay valid because the browser
+      // already has them loaded.
+      player.addEventListener('loadedmetadata', () => URL.revokeObjectURL(player.src));
+      audioStrip.appendChild(player);
+      audioStrip.appendChild(el('button', {
+        type: 'button',
+        class: 'session-audio-strip__delete',
+        'aria-label': t('session.audioDelete'),
+        title: t('session.audioDelete'),
+        html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        onClick: deleteAudio
+      }));
+      audioStrip.hidden = false;
+    }
+    renderAudioStrip();
+    root.appendChild(audioStrip);
+
+    // Recording state held in closure so the action circle's handlers
+    // can flip the same recorder instance. capLimit auto-stops a long
+    // session memo at 90s — sessions only want short reminders, not
+    // multi-minute monologues (those belong in stories).
+    const VOICE_CAP_MS = 90 * 1000;
+    let _voiceRecorder = null;
+    let _voiceChunks = [];
+    let _voiceStream = null;
+    let _voiceCapTimer = null;
+    let _voiceBtnNode = null;   // populated by ref hook on the circle
+    function setRecordingClass(on) {
+      if (_voiceBtnNode) {
+        if (on) _voiceBtnNode.classList.add('is-recording');
+        else _voiceBtnNode.classList.remove('is-recording');
+      }
+    }
+    async function startVoice() {
+      if (_voiceRecorder) return; // already running
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        toast(t('story.audioUnsupported'));
+        return;
+      }
+      try {
+        _voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        toast(t('story.micUnavailable', { err: err.message || err }));
+        return;
+      }
+      _voiceChunks = [];
+      _voiceRecorder = new MediaRecorder(_voiceStream);
+      _voiceRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _voiceChunks.push(e.data); };
+      _voiceRecorder.onstop = async () => {
+        const blob = new Blob(_voiceChunks, { type: _voiceRecorder.mimeType || 'audio/webm' });
+        // Release the mic
+        try { _voiceStream.getTracks().forEach((tr) => tr.stop()); } catch (e) {}
+        _voiceStream = null;
+        _voiceRecorder = null;
+        _voiceChunks = [];
+        clearTimeout(_voiceCapTimer); _voiceCapTimer = null;
+        setRecordingClass(false);
+        // Discard sub-half-second hits — usually accidental taps.
+        if (blob.size < 800) {
+          toast(t('session.audioTooShort'));
+          return;
+        }
+        session.audio = blob;
+        session.hasAudio = true;
+        session.audioUploaded = false;
+        await DB.put('sessions', session, CURRENT_AUTHOR.id);
+        renderAudioStrip();
+        toast(t('session.audioSaved'));
+        if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+      };
+      _voiceRecorder.start();
+      setRecordingClass(true);
+      _voiceCapTimer = setTimeout(() => { if (_voiceRecorder && _voiceRecorder.state === 'recording') _voiceRecorder.stop(); }, VOICE_CAP_MS);
+    }
+    function stopVoice() {
+      if (_voiceRecorder && _voiceRecorder.state === 'recording') {
+        _voiceRecorder.stop();   // onstop handles cleanup + save
+      }
+    }
+
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'row', style: 'gap:12px; min-width:0' }, [
@@ -2456,6 +3260,27 @@
       ]),
       session.notes ? el('p', { class: 'small', style: 'margin-top:8px; white-space:pre-wrap' }, session.notes) : null
     ]));
+
+    // Hidden file input for the Photo action circle below. Tapping the
+    // circle triggers a click on this input; on selection we store the
+    // Blob on the session and re-render the banner. Sync engine handles
+    // the upload to /api/sessions/<id>/media/photo on the next pass.
+    const photoInput = el('input', {
+      type: 'file', accept: 'image/*', capture: 'environment',
+      style: 'display:none'
+    });
+    photoInput.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      session.photo = f;
+      session.hasPhoto = true;
+      session.photoUploaded = false;
+      await DB.put('sessions', session, CURRENT_AUTHOR.id);
+      renderPhotoBanner();
+      toast(t('session.photoSaved'));
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+    });
+    root.appendChild(photoInput);
 
     const heading = el('h3', { class: 'section-h' }, [
       el('span', { class: 'section-h__icon', html: THUMB_ICONS.attendance }),
@@ -2793,11 +3618,77 @@
       root.appendChild(panel);
     }
 
+    // v0.3.8 — Bulk attendance. One tap marks every non-walk-in
+    // enrolee present; the trainer then unchecks absentees. Walk-ins
+    // are skipped (they're already present by definition). Already-
+    // present rows are skipped too so we don't bump server_updated_at
+    // for no reason.
+    async function markAllPresent() {
+      if (!participants.length) { toast(t('session.noParticipants')); return; }
+      let changed = 0;
+      for (const p of participants) {
+        let rec = attMap.get(p.id);
+        if (rec && rec.present) continue;        // already present
+        if (rec) {
+          rec.present = true;
+        } else {
+          rec = { sessionId: session.id, participantId: p.id, present: true };
+        }
+        await DB.put('attendance', rec, CURRENT_AUTHOR.id);
+        attMap.set(p.id, rec);
+        changed++;
+      }
+      // Flip the visible checkboxes in one pass — cheaper than re-rendering.
+      attendanceList.querySelectorAll('.att-row .toggle').forEach((cb) => { cb.checked = true; });
+      updateCount();
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+      toast(t('session.allPresentToast', { n: changed }));
+    }
+
     // v0.3.7 — three actions formerly at the bottom of the page now sit
     // as iOS-Calls-style circles in one row, slotted under the attendance
     // search bar. Falls back to underneath the heading when there's no
     // search (empty roster).
+    // v0.3.8 — added "All present" + "Photo" + "Voice" circles.
+    // Voice uses the ref hook to attach hold-to-record gesture handlers
+    // (pointerdown → start, pointerup/cancel/leave → stop). A plain
+    // onClick would conflict with the hold gesture.
     const sessActions = actionCircles([
+      participants.length ? {
+        icon: ACTION_ICONS.checkAll,
+        label: t('actions.allPresent'),
+        onClick: markAllPresent
+      } : null,
+      {
+        icon: ACTION_ICONS.camera,
+        label: t('actions.photo'),
+        onClick: () => photoInput.click()
+      },
+      {
+        icon: ACTION_ICONS.mic,
+        label: t('actions.voice'),
+        ref: (node) => {
+          _voiceBtnNode = node;
+          // Hold-to-record. pointerdown starts the recorder; releasing
+          // (anywhere — including dragging off the button) stops it.
+          // touchAction:none keeps iOS from scrolling on long-press.
+          node.style.touchAction = 'none';
+          node.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            try { node.setPointerCapture(e.pointerId); } catch (err) {}
+            startVoice();
+            e.preventDefault();
+          });
+          const release = (e) => {
+            try { node.releasePointerCapture(e.pointerId); } catch (err) {}
+            stopVoice();
+          };
+          node.addEventListener('pointerup', release);
+          node.addEventListener('pointercancel', release);
+          // Don't bind a regular onClick — the click event also fires
+          // after a pointerup and would re-trigger if we hooked it.
+        }
+      },
       group && openPanel ? {
         icon: ACTION_ICONS.walkIn,
         label: t('actions.walkIn'),
@@ -2817,6 +3708,24 @@
     const attSearch = attendanceList.querySelector('.list-search');
     if (attSearch) attSearch.after(sessActions);
     else attendanceList.parentNode.insertBefore(sessActions, attendanceList);
+
+    // v0.3.8 — Quick session resume. When the session is dated today
+    // (the most likely "trainer just walked into the room" scenario),
+    // skip past the header card and land directly on the Attendance
+    // heading so the toggles are reachable without scrolling. The
+    // trainer can still scroll up for date / theme / location / notes.
+    // We defer to the next frame so the route has fully painted before
+    // we move the viewport — otherwise the browser's own post-hashchange
+    // scroll-to-top fights ours.
+    if (session.date === todayInput()) {
+      requestAnimationFrame(() => {
+        try {
+          if (heading && heading.scrollIntoView) {
+            heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } catch (e) { /* older WebViews — silently no-op */ }
+      });
+    }
   }
 
   // ---------- Stories list ----------
@@ -2882,42 +3791,123 @@
       .filter((p) => !p.sex || !p.ageRange)
       .sort((a, b) => ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
 
+    // Live count subtitle so we can decrement it as rows are fixed.
+    const missingCountSub = el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'));
     const missingCard = el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row', style: 'gap:12px; align-items:flex-start' }, [
         el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS.warning }),
         el('div', { class: 'grow', style: 'min-width:0' }, [
           el('div', { class: 'card__title' }, t('reports.missingTitle')),
-          el('div', { class: 'card__sub' }, tn(participants.length, 'reports.missingCountOne', 'reports.missingCountOther'))
+          missingCountSub
         ])
       ])
     ]);
     root.appendChild(missingCard);
 
-    if (participants.length) {
-      participants.forEach((p) => {
+    // Container for missing-demographics rows so we can drop "all clear"
+    // copy in when the last row is fixed, and refresh the count card.
+    const missingList = el('div', { class: 'reports-missing-list' });
+    const missingNone = el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone'));
+    root.appendChild(missingList);
+    if (!participants.length) {
+      missingList.appendChild(missingNone);
+    }
+
+    function refreshMissingCount() {
+      const live = missingList.querySelectorAll('.missing-row').length;
+      missingCountSub.textContent = tn(live, 'reports.missingCountOne', 'reports.missingCountOther', { n: live });
+      if (live === 0 && !missingList.contains(missingNone)) {
+        missingList.appendChild(missingNone);
+      }
+    }
+
+    participants.forEach((p) => {
+      // ---- summary (the tappable row) ----
+      const title = el('div', { class: 'list-item__title' }, [
+        document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
+        p.source === 'moodle'
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          : null
+      ]);
+      const missingText = () => {
         const missing = [
           !p.sex      ? t('common.sex')      : null,
           !p.ageRange ? t('common.ageRange') : null
         ].filter(Boolean).join(' · ');
-        const title = el('div', { class: 'list-item__title' }, [
-          document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
-          p.source === 'moodle'
-            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
-            : null
-        ]);
-        root.appendChild(el('a', { class: 'card-link', href: `#/participants/${p.id}/edit` }, [
-          el('div', { class: 'list-item' }, [
-            thumbIcon('participants'),
-            el('div', { class: 'grow' }, [
-              title,
-              el('div', { class: 'list-item__sub' }, [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · '))
-            ])
-          ])
-        ]));
+        return [groupName(p.groupId), t('reports.missingFields', { fields: missing })].filter(Boolean).join(' · ');
+      };
+      const sub = el('div', { class: 'list-item__sub' }, missingText());
+      const chev = el('span', { class: 'missing-row__chev', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>' });
+      const summary = el('button', { type: 'button', class: 'missing-row__summary' }, [
+        el('div', { class: 'list-item' }, [
+          thumbIcon('participants'),
+          el('div', { class: 'grow' }, [title, sub]),
+          chev
+        ])
+      ]);
+
+      // ---- inline editor (hidden by default, expands on tap) ----
+      const sexSel = selectEl('sex',
+        [{ value: '', label: '—' }].concat(SEX_OPTIONS.map((s) => ({ value: s, label: sexLabel(s) }))),
+        p.sex || '');
+      const ageSel = selectEl('ageRange',
+        [{ value: '', label: '—' }].concat(AGE_RANGES.map((a) => ({ value: a, label: a }))),
+        p.ageRange || '');
+      const saveBtn = el('button', { class: 'btn btn--sm', type: 'button' }, t('common.save'));
+      const cancelBtn = el('button', { class: 'btn btn--sm btn--ghost', type: 'button' }, t('common.cancel'));
+      const editor = el('div', { class: 'missing-row__editor', hidden: true }, [
+        el('div', { class: 'row', style: 'gap:12px' }, [
+          el('div', { class: 'grow' }, fg(t('common.sex'), sexSel)),
+          el('div', { class: 'grow' }, fg(t('common.ageRange'), ageSel))
+        ]),
+        el('div', { class: 'row', style: 'gap:8px; justify-content:flex-end; margin-top:8px' }, [cancelBtn, saveBtn])
+      ]);
+      function refreshSaveState() {
+        // Both must be filled before the row can vanish; otherwise stay open.
+        saveBtn.disabled = !sexSel.value || !ageSel.value;
+      }
+      sexSel.addEventListener('change', refreshSaveState);
+      ageSel.addEventListener('change', refreshSaveState);
+      refreshSaveState();
+
+      summary.addEventListener('click', () => {
+        const opening = editor.hidden;
+        editor.hidden = !opening;
+        row.classList.toggle('is-open', opening);
       });
-    } else {
-      root.appendChild(el('p', { class: 'muted small', style: 'margin-top:-4px' }, t('reports.missingNone')));
-    }
+      cancelBtn.addEventListener('click', () => {
+        sexSel.value = p.sex || '';
+        ageSel.value = p.ageRange || '';
+        refreshSaveState();
+        editor.hidden = true;
+        row.classList.remove('is-open');
+      });
+      saveBtn.addEventListener('click', async () => {
+        p.sex      = sexSel.value || p.sex;
+        p.ageRange = ageSel.value || p.ageRange;
+        try {
+          await DB.put('participants', p, CURRENT_AUTHOR.id);
+        } catch (err) {
+          console.error('[ubuntu30 reports] participant save failed', err);
+          toast((err && err.message) || t('common.error'));
+          return;
+        }
+        toast(t('reports.missingFixedToast', { name: ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName') }));
+        if (window.SYNC) window.SYNC.syncNow().catch(() => {});
+        // Both filled → row disappears from the report.
+        if (p.sex && p.ageRange) {
+          row.remove();
+          refreshMissingCount();
+        } else {
+          // Partial save (e.g. only sex now filled) — keep open and
+          // update the missing-fields line.
+          sub.textContent = missingText();
+        }
+      });
+
+      const row = el('div', { class: 'missing-row' }, [summary, editor]);
+      missingList.appendChild(row);
+    });
 
     // ----- Card 2: stories that ship to the public feed -----
     // publishable=true implies consent=true (the story form forces that),
@@ -3064,6 +4054,35 @@
     // v0.3.7 — long story text is now rich-text. Stores HTML in story.text.
     const rtEditor = buildRichTextEditor(story.text || '', { placeholder: t('story.textPh') });
 
+    // v0.3.8 — Story starter prompts. Only on a fresh, empty story so
+    // an editor reopening a saved one doesn't get unexpected
+    // suggestions. Picks 3 random prompts from the i18n pool; tapping
+    // one inserts it as the opening sentence and dismisses the card.
+    const STORY_PROMPT_POOL = 8;
+    let promptsCard = null;
+    if (!isEdit && !(story.text || '').trim()) {
+      const picks = [];
+      while (picks.length < 3 && picks.length < STORY_PROMPT_POOL) {
+        const n = Math.floor(Math.random() * STORY_PROMPT_POOL) + 1;
+        if (picks.indexOf(n) === -1) picks.push(n);
+      }
+      promptsCard = el('div', { class: 'story-prompts' }, [
+        el('div', { class: 'story-prompts__title' }, t('story.promptsTitle')),
+        el('p', { class: 'story-prompts__intro' }, t('story.promptsIntro')),
+        el('div', { class: 'story-prompts__list' }, picks.map((i) => {
+          const text = t('story.prompt.' + i);
+          return el('button', {
+            type: 'button',
+            class: 'story-prompt-chip',
+            onClick: () => {
+              rtEditor.setText(text);
+              if (promptsCard) promptsCard.hidden = true;
+            }
+          }, text);
+        }))
+      ]);
+    }
+
     const form = el('form', { class: 'card', onSubmit: async (e) => {
       e.preventDefault();
       story.text = rtEditor.getHtml();
@@ -3090,6 +4109,7 @@
       go('/stories');
     } }, [
       fg(t('story.textLabel'), rtEditor.wrapper),
+      promptsCard,
       fg(t('story.photoLabel'), el('div', { class: 'row', style: 'gap:12px; align-items:center' }, [
         photoPreview,
         el('label', { class: 'btn btn--sm btn--soft' }, [
@@ -3384,6 +4404,22 @@
         class: 'btn btn--sm btn--ghost', type: 'button',
         onClick: () => openSettingsPopup()
       }, t('more.openSettings'))
+    ]));
+
+    // App tour — replay the first-run coachmark series for trainers who
+    // dismissed it earlier and want a refresher, or who are showing a new
+    // colleague around. Resets the localStorage flag too so the tour fires
+    // again on next dashboard visit.
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h3', null, t('more.tour.title')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('more.tour.note')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => {
+          clearTourSeen();
+          go('/dashboard');
+        }
+      }, t('more.tour.replayCta'))
     ]));
 
     // Account (v0.2)
@@ -4026,7 +5062,24 @@
       return html;
     }
 
-    return { wrapper, getHtml, focus: () => editor.focus() };
+    // v0.3.8 — setText injects a plain-text starter sentence (wrapping
+    // it in a paragraph) and places the caret at the end so the
+    // trainer can keep typing. Used by the story prompts hint.
+    function setText(text) {
+      const safe = String(text || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      editor.innerHTML = '<p>' + safe + ' </p>';
+      editor.focus();
+      // Move caret to the end
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    return { wrapper, getHtml, focus: () => editor.focus(), setText, editor };
   }
 
   /** Strip HTML tags from a string — used in list previews + dashboard cards. */
@@ -4208,6 +5261,99 @@
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
   }
+  // v0.3.8 — Per-course CSV exports for trainers in the field. Built
+  // from the local IndexedDB so they work offline (e.g. on a donor
+  // visit). File name carries the course name so trainers can hand
+  // multiple files to the same donor without confusion.
+
+  /** Slugify a course name for a filename. ASCII-safe; falls back to "course". */
+  function slugifyForFile(s) {
+    return (s || 'course').toString().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'course';
+  }
+
+  /** Yes/No localiser for booleans in CSVs — easier for non-technical readers. */
+  function csvBool(v) {
+    return v ? t('csv.yes') : t('csv.no');
+  }
+
+  /** Build + download an attendance CSV: one row per (participant × session). */
+  async function exportCourseAttendanceCsv(group, participants, sessionsAsc, attendance) {
+    const rows = [];
+    const sessAtt = (sid) => attendance.filter((a) => a.sessionId === sid);
+    sessionsAsc.forEach((s) => {
+      const sa = sessAtt(s.id);
+      // Roster scoped to this session: regular enrolees + any walk-ins
+      // recorded for THIS session (walk-ins from other sessions are
+      // intentionally excluded).
+      const roster = participants
+        .filter((p) => !p.walkInSessionId || p.walkInSessionId === s.id);
+      roster.forEach((p) => {
+        const rec = sa.find((a) => a.participantId === p.id);
+        rows.push({
+          session_date:    s.date || '',
+          session_theme:   s.theme || '',
+          session_location: s.location || '',
+          first_name:      p.firstName || '',
+          last_name:       p.lastName || '',
+          sex:             p.sex || '',
+          age_range:       p.ageRange || '',
+          contact:         p.contact || '',
+          walk_in:         csvBool(!!p.walkInSessionId),
+          present:         csvBool(!!(rec && rec.present)),
+          recorded:        csvBool(!!rec)
+        });
+      });
+    });
+    const csv = toCsv(rows, [
+      'session_date', 'session_theme', 'session_location',
+      'first_name', 'last_name', 'sex', 'age_range', 'contact',
+      'walk_in', 'present', 'recorded'
+    ]);
+    // BOM prepended so Excel opens the file as UTF-8 by default.
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob('attendance-' + slugifyForFile(group.name) + '.csv', blob);
+    toast(t('csv.attendanceDone', { n: rows.length }));
+  }
+
+  /** Build + download a stories CSV for this course. */
+  async function exportCourseStoriesCsv(group, sessionsAsc, participants, stories) {
+    const sessIds = new Set(sessionsAsc.map((s) => s.id));
+    const partIds = new Set(participants.map((p) => p.id));
+    const sessTheme = (sid) => (sessionsAsc.find((x) => x.id === sid) || {}).theme || '';
+    const sessDate  = (sid) => (sessionsAsc.find((x) => x.id === sid) || {}).date || '';
+    const partName  = (pid) => {
+      const p = participants.find((x) => x.id === pid);
+      if (!p) return '';
+      return ((p.firstName || '') + ' ' + (p.lastName || '')).trim();
+    };
+    const scoped = stories.filter((s) =>
+      (s.sessionId && sessIds.has(s.sessionId)) ||
+      (s.participantId && partIds.has(s.participantId))
+    );
+    const rows = scoped.map((s) => ({
+      created_at:     s.createdAt || s.updatedAt || '',
+      session_date:   s.sessionId ? sessDate(s.sessionId) : '',
+      session_theme:  s.sessionId ? sessTheme(s.sessionId) : '',
+      participant:    s.participantId ? partName(s.participantId) : '',
+      text:           stripHtml(s.text || ''),
+      consent:        csvBool(s.consent),
+      publishable:    csvBool(s.publishable),
+      has_photo:      csvBool(s.hasPhoto || !!s.photo),
+      has_audio:      csvBool(s.hasAudio || !!s.audio),
+    }));
+    const csv = toCsv(rows, [
+      'created_at', 'session_date', 'session_theme', 'participant',
+      'text', 'consent', 'publishable', 'has_photo', 'has_audio'
+    ]);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob('stories-' + slugifyForFile(group.name) + '.csv', blob);
+    toast(t('csv.storiesDone', { n: rows.length }));
+  }
+
   async function exportCsv(storeName) {
     const COLUMN_MAP = {
       cohorts: ['id', 'name', 'region', 'startDate', 'endDate', 'createdAt', 'updatedAt', 'authorId'],
@@ -4283,6 +5429,7 @@
   route('/groups/:groupId/participants/new', participantFormView);
   route('/participants', participantsListView);
   route('/participants/:id/edit', participantFormView);
+  route('/participants/:id/certificate', certificateView);
   route('/sessions', sessionsListView);
   route('/sessions/new', (_p, r) => sessionFormView({}, r));
   route('/sessions/:id', sessionDetailView);

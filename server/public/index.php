@@ -15,6 +15,9 @@ use Ubuntu\PasswordReset;
 use Ubuntu\MoodleSync;
 use Ubuntu\Reports;
 use Ubuntu\PublicFeed;
+use Ubuntu\Audit;
+use Ubuntu\Demo;
+use Ubuntu\DonorPortal;
 
 $base = dirname(__DIR__);
 require $base . '/src/Config.php';
@@ -31,6 +34,9 @@ require $base . '/src/MoodleAuth.php';
 require $base . '/src/MoodleSync.php';
 require $base . '/src/Reports.php';
 require $base . '/src/PublicFeed.php';
+require $base . '/src/Audit.php';
+require $base . '/src/Demo.php';
+require $base . '/src/DonorPortal.php';
 
 // Load config (config.php sits next to config.example.php in $base)
 try {
@@ -111,8 +117,21 @@ $routes = [
     // v0.3.2 — donor reports (admin only)
     ['POST',   '#^/admin/reports/donor$#',              [Reports::class, 'donor']],
 
+    // v0.3.8 — audit log (who edited what, when), admin only
+    ['GET',    '#^/admin/audit$#',                      [Audit::class, 'list']],
+
+    // v0.3.8 — sample-data toggle for trainer training (admin only).
+    // Spins up a DEMO cohort + courses + sessions + attendance + stories
+    // that sync down to every device, and a one-click cleanup that
+    // tombstones the whole subtree.
+    ['GET',    '#^/admin/demo/status$#',                [Demo::class, 'status']],
+    ['POST',   '#^/admin/demo/seed$#',                  [Demo::class, 'seed']],
+    ['POST',   '#^/admin/demo/remove$#',                [Demo::class, 'remove']],
+
     // v0.3.3 — public stories feed (no auth)
     ['GET',    '#^/public/stories$#',                                       [PublicFeed::class, 'stories']],
+    // v0.3.8 — donor portal mini-site stats (no auth, no PII)
+    ['GET',    '#^/public/donor-stats$#',                                   [DonorPortal::class, 'stats']],
     ['GET',    '#^/public/stories/([a-f0-9-]{36})/(photo|audio)$#',         fn($id, $kind) => PublicFeed::media($id, $kind)],
     // v0.3.3a — views and likes
     ['POST',   '#^/public/stories/([a-f0-9-]{36})/view$#',                  fn($id) => PublicFeed::view($id)],
@@ -124,6 +143,13 @@ $routes = [
     // don't strip the Authorization header on media downloads.
     ['POST',   '#^/stories/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::download($id, $kind)],
     ['DELETE', '#^/stories/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::delete($id, $kind)],
+
+    // v0.3.8 — session media (photo + audio voice note). Mirrors the
+    // stories pattern; the same handler covers both kinds.
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::uploadSessionMedia($id, $kind)],
+    ['GET',    '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
+    ['POST',   '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
+    ['DELETE', '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::deleteSessionMedia($id, $kind)],
 ];
 
 try {
