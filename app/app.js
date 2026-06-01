@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8-dev.17';
+  const APP_VERSION = '0.3.8-dev.18';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -1158,6 +1158,139 @@
     root.appendChild(form);
   }
 
+  // ============================================================
+  //  First-run tour — v0.3.8
+  //  4-step coachmark series fired the first time a non-admin user
+  //  lands on the dashboard. Each step spotlights one tab in the
+  //  bottom tab bar (Dashboard → Sessions → Stories → More) and shows
+  //  a tooltip explaining what lives there. Persisted in localStorage
+  //  so it never shows again. Replayable from the More tab.
+  // ============================================================
+  const TOUR_KEY = 'ubuntu30.tourSeen';
+  const TOUR_STEPS = [
+    { tab: 'dashboard', titleKey: 'tour.step1.title', bodyKey: 'tour.step1.body' },
+    { tab: 'sessions',  titleKey: 'tour.step2.title', bodyKey: 'tour.step2.body' },
+    { tab: 'stories',   titleKey: 'tour.step3.title', bodyKey: 'tour.step3.body' },
+    { tab: 'more',      titleKey: 'tour.step4.title', bodyKey: 'tour.step4.body' }
+  ];
+  function tourSeen() {
+    try { return localStorage.getItem(TOUR_KEY) === '1'; } catch (e) { return false; }
+  }
+  function markTourSeen() {
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {}
+  }
+  function clearTourSeen() {
+    try { localStorage.removeItem(TOUR_KEY); } catch (e) {}
+  }
+  /** Called from dashboardView after the first render. No-op if already seen. */
+  function maybeStartTour() {
+    if (tourSeen()) return;
+    // Belt-and-suspenders: admins use the admin web view, not the PWA,
+    // but if one ever lands here we skip the tour.
+    if (CURRENT_AUTHOR && CURRENT_AUTHOR.role === 'admin') return;
+    // Give the tab bar a beat to finish laying out before we measure.
+    setTimeout(() => { startTour(); }, 300);
+  }
+  /** Public entry point — used by the "Replay tour" button in More. */
+  function startTour() {
+    // Clear any previous overlay so re-entry is safe.
+    document.querySelectorAll('.tour-backdrop, .tour-spotlight, .tour-coachmark').forEach((n) => n.remove());
+
+    let i = 0;
+    const backdrop  = el('div', { class: 'tour-backdrop' });
+    const spotlight = el('div', { class: 'tour-spotlight' });
+    const coachmark = el('div', { class: 'tour-coachmark' });
+    document.body.appendChild(backdrop);
+    document.body.appendChild(spotlight);
+    document.body.appendChild(coachmark);
+
+    function finish() {
+      markTourSeen();
+      backdrop.remove(); spotlight.remove(); coachmark.remove();
+      window.removeEventListener('resize', position);
+      window.removeEventListener('orientationchange', position);
+    }
+    // A tap on the dimmed backdrop counts as "skip" — matches platform habits.
+    backdrop.addEventListener('click', finish);
+
+    function position() {
+      const step = TOUR_STEPS[i];
+      const target = document.querySelector('.tabbar .tab[data-tab="' + step.tab + '"]');
+      if (!target) {
+        // Tab not in the DOM (e.g. hidden via Settings). Skip ahead.
+        i++;
+        if (i >= TOUR_STEPS.length) { finish(); return; }
+        position();
+        return;
+      }
+      const r = target.getBoundingClientRect();
+      const pad = 6;
+      spotlight.style.top    = (r.top    - pad) + 'px';
+      spotlight.style.left   = (r.left   - pad) + 'px';
+      spotlight.style.width  = (r.width  + pad * 2) + 'px';
+      spotlight.style.height = (r.height + pad * 2) + 'px';
+
+      // Coachmark sits above the tab bar, horizontally centred on the target,
+      // clamped to the viewport edges so it never spills off-screen.
+      const cmW = Math.min(320, window.innerWidth - 24);
+      const cmRect = coachmark.getBoundingClientRect();
+      const cmH = cmRect.height || 140;
+      let cmLeft = r.left + r.width / 2 - cmW / 2;
+      cmLeft = Math.max(12, Math.min(cmLeft, window.innerWidth - cmW - 12));
+      let cmTop = r.top - cmH - 16;
+      if (cmTop < 12) cmTop = r.bottom + 16;   // No room above? Drop below.
+      coachmark.style.width = cmW + 'px';
+      coachmark.style.left  = cmLeft + 'px';
+      coachmark.style.top   = cmTop  + 'px';
+
+      // Arrow points at the target. If the coachmark is below the target,
+      // flip the arrow so it points up instead.
+      const arrow = coachmark.querySelector('.tour-coachmark__arrow');
+      if (arrow) {
+        const arrowLeft = (r.left + r.width / 2) - cmLeft;
+        arrow.style.left = arrowLeft + 'px';
+        if (cmTop > r.top) {
+          arrow.style.bottom = 'auto';
+          arrow.style.top    = '-7px';
+        } else {
+          arrow.style.top    = 'auto';
+          arrow.style.bottom = '-7px';
+        }
+      }
+    }
+
+    function render() {
+      const step = TOUR_STEPS[i];
+      const isLast = i === TOUR_STEPS.length - 1;
+      coachmark.innerHTML = '';
+      coachmark.appendChild(el('p', { class: 'tour-coachmark__progress' },
+        t('tour.progress', { n: i + 1, total: TOUR_STEPS.length })));
+      coachmark.appendChild(el('h3', { class: 'tour-coachmark__title' }, t(step.titleKey)));
+      coachmark.appendChild(el('p',  { class: 'tour-coachmark__body'  }, t(step.bodyKey)));
+      coachmark.appendChild(el('div', { class: 'tour-coachmark__actions' }, [
+        el('button', {
+          class: 'tour-coachmark__skip', type: 'button',
+          onClick: finish
+        }, t('tour.skip')),
+        el('button', {
+          class: 'tour-coachmark__next', type: 'button',
+          onClick: () => {
+            if (isLast) { finish(); return; }
+            i++;
+            render();
+          }
+        }, isLast ? t('tour.gotIt') : t('tour.next'))
+      ]));
+      coachmark.appendChild(el('div', { class: 'tour-coachmark__arrow' }));
+      // Reposition after layout — the coachmark height isn't known until paint.
+      requestAnimationFrame(position);
+    }
+
+    window.addEventListener('resize', position);
+    window.addEventListener('orientationchange', position);
+    render();
+  }
+
   // ---------- Dashboard ----------
   async function dashboardView(_params, root) {
     setTitle(t('dash.title'));
@@ -1358,6 +1491,10 @@
         ])
       ]));
     }
+
+    // First-run tour — no-op if already seen, otherwise fires after a short
+    // delay so the tab bar is settled and we can measure the target tab.
+    maybeStartTour();
   }
 
   function tile(label, value, sub, barPct) {
@@ -4267,6 +4404,22 @@
         class: 'btn btn--sm btn--ghost', type: 'button',
         onClick: () => openSettingsPopup()
       }, t('more.openSettings'))
+    ]));
+
+    // App tour — replay the first-run coachmark series for trainers who
+    // dismissed it earlier and want a refresher, or who are showing a new
+    // colleague around. Resets the localStorage flag too so the tour fires
+    // again on next dashboard visit.
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h3', null, t('more.tour.title')),
+      el('p', { class: 'small muted', style: 'margin-top:0' }, t('more.tour.note')),
+      el('button', {
+        class: 'btn btn--sm btn--ghost', type: 'button',
+        onClick: () => {
+          clearTourSeen();
+          go('/dashboard');
+        }
+      }, t('more.tour.replayCta'))
     ]));
 
     // Account (v0.2)
