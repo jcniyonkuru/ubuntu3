@@ -82,6 +82,10 @@
         .join('&');
       return call('GET', '/admin/audit' + (qs ? ('?' + qs) : ''));
     },
+    // v0.3.8 — demo (sample data) toggle
+    demoStatus()                    { return call('GET',  '/admin/demo/status'); },
+    demoSeed()                      { return call('POST', '/admin/demo/seed'); },
+    demoRemove()                    { return call('POST', '/admin/demo/remove'); },
   };
 
   /** RFC4122 v4 UUID. */
@@ -381,6 +385,94 @@
       card2.appendChild(tbl);
     }
     main.appendChild(card2);
+
+    // ----- Sample data card (v0.3.8) -----
+    // Lets the admin spin up a DEMO cohort full of fake data for trainer
+    // training, and remove it again in one click. The actual create/destroy
+    // happens server-side and syncs down to every device.
+    main.appendChild(renderDemoCard());
+  }
+
+  /**
+   * Sample-data card: status probe + Create/Remove CTA. Re-renders itself in
+   * place after each action so the admin sees the new counts immediately
+   * (the cleanup also kicks a top-level refresh so the rest of the dashboard
+   * stops showing the demo numbers).
+   */
+  function renderDemoCard() {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('div', { class: 'card__head' }, el('h2', null, 'Sample data (trainer training)')));
+    card.appendChild(el('p', { class: 'small muted', style: 'margin-top:0' },
+      'Spin up a self-contained DEMO cohort full of fake participants, sessions, attendance, and stories so new trainers can practice in the PWA without touching real data. One click to create, one click to remove. The demo syncs down to every device.'));
+
+    const body = el('div');
+    card.appendChild(body);
+
+    async function rerender() {
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'small muted' }, 'Checking…'));
+      let st;
+      try { st = await API.demoStatus(); }
+      catch (err) {
+        body.innerHTML = '';
+        body.appendChild(el('p', { class: 'error' }, 'Could not load demo status: ' + (err.message || 'server error')));
+        return;
+      }
+      body.innerHTML = '';
+
+      if (st && st.present) {
+        body.appendChild(el('p', null, [
+          el('strong', null, st.cohortName || 'DEMO cohort'),
+          ' — ',
+          el('span', { class: 'small muted' },
+            st.courses + ' course(s) · ' + st.participants + ' participant(s) · ' +
+            st.sessions + ' session(s) · ' + st.attendance + ' attendance row(s) · ' +
+            st.stories + ' stor' + (st.stories === 1 ? 'y' : 'ies'))
+        ]));
+        const removeBtn = el('button', {
+          class: 'btn btn--sm',
+          style: 'background:var(--danger); color:#fff',
+          onClick: async () => {
+            if (!confirm('Remove the demo cohort and every fake course / session / participant / story under it? This soft-deletes everything (tombstones sync down to all devices).')) return;
+            removeBtn.disabled = true; removeBtn.textContent = 'Removing…';
+            try {
+              const r = await API.demoRemove();
+              toast(r && r.removed
+                ? 'Demo data removed (' + (r.tombstoned || 0) + ' rows tombstoned).'
+                : 'No demo data to remove.');
+              await refresh();
+              renderCurrent();
+            } catch (err) {
+              toast('Could not remove demo data: ' + (err.message || 'server error'));
+              removeBtn.disabled = false; removeBtn.textContent = 'Remove demo data';
+            }
+          }
+        }, 'Remove demo data');
+        body.appendChild(el('div', { class: 'row', style: 'gap:8px; margin-top:8px' }, [removeBtn]));
+      } else {
+        body.appendChild(el('p', { class: 'small muted' }, 'No demo data right now.'));
+        const seedBtn = el('button', {
+          class: 'btn btn--sm',
+          onClick: async () => {
+            seedBtn.disabled = true; seedBtn.textContent = 'Creating…';
+            try {
+              const r = await API.demoSeed();
+              toast('Demo cohort ready: ' + (r.participants || 0) + ' participants, ' +
+                    (r.sessions || 0) + ' sessions.');
+              await refresh();
+              renderCurrent();
+            } catch (err) {
+              toast('Could not create demo data: ' + (err.message || 'server error'));
+              seedBtn.disabled = false; seedBtn.textContent = 'Create demo cohort';
+            }
+          }
+        }, 'Create demo cohort');
+        body.appendChild(el('div', { class: 'row', style: 'gap:8px; margin-top:8px' }, [seedBtn]));
+      }
+    }
+
+    rerender();
+    return card;
   }
 
   /** "Trainees" sidebar link: render the Users page in trainees mode. */
