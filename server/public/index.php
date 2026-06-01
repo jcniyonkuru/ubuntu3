@@ -17,6 +17,7 @@ use Ubuntu\Reports;
 use Ubuntu\PublicFeed;
 use Ubuntu\Audit;
 use Ubuntu\Demo;
+use Ubuntu\DonorPortal;
 
 $base = dirname(__DIR__);
 require $base . '/src/Config.php';
@@ -35,6 +36,7 @@ require $base . '/src/Reports.php';
 require $base . '/src/PublicFeed.php';
 require $base . '/src/Audit.php';
 require $base . '/src/Demo.php';
+require $base . '/src/DonorPortal.php';
 
 // Load config (config.php sits next to config.example.php in $base)
 try {
@@ -128,6 +130,8 @@ $routes = [
 
     // v0.3.3 — public stories feed (no auth)
     ['GET',    '#^/public/stories$#',                                       [PublicFeed::class, 'stories']],
+    // v0.3.8 — donor portal mini-site stats (no auth, no PII)
+    ['GET',    '#^/public/donor-stats$#',                                   [DonorPortal::class, 'stats']],
     ['GET',    '#^/public/stories/([a-f0-9-]{36})/(photo|audio)$#',         fn($id, $kind) => PublicFeed::media($id, $kind)],
     // v0.3.3a — views and likes
     ['POST',   '#^/public/stories/([a-f0-9-]{36})/view$#',                  fn($id) => PublicFeed::view($id)],
