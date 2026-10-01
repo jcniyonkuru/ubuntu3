@@ -1287,6 +1287,11 @@ p { margin: 6px 0; }
   color: var(--brand);
 }
 .thumb--icon svg { width: 30px; height: 30px; }
+/* v0.3.9a — participant avatars: round crop; small variant for the dense
+   attendance rows in the session view. */
+.thumb--avatar { border-radius: 50%; }
+.thumb--sm { width: 36px; height: 36px; }
+.thumb--sm svg { width: 20px; height: 20px; }
 
 /* card variant that lays its children out in a row so a thumb can sit
    next to the title/sub block on Cohort / Course / Session list rows. */

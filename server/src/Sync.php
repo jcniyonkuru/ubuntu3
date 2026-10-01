@@ -54,6 +54,7 @@ final class Sync
                 'contact' => 'contact',
                 'walkInSessionId' => 'walk_in_session_id',  // v0.3.5c: session-local scope
                 'status' => 'status',                       // v0.3.5d: 'active' | 'dropped'
+                'hasPhoto' => 'has_photo',                  // v0.3.9a: avatar photo
             ],
             'readonly' => [
                 'source' => 'source',

@@ -239,7 +239,7 @@ final class Users
     {
         Auth::requireUser();
         $stmt = Db::pdo()->query(
-            "SELECT id, first_name, last_name, name, email, role
+            "SELECT id, first_name, last_name, name, email, role, has_photo
              FROM users
              WHERE disabled_at IS NULL
                AND role IN ('trainer','admin')
@@ -253,6 +253,7 @@ final class Users
             'name'      => $r['name'],
             'email'     => $r['email'],
             'role'      => $r['role'],
+            'hasPhoto'  => (bool) (int) ($r['has_photo'] ?? 0),
         ], $rows)]);
     }
 
@@ -294,7 +295,7 @@ final class Users
             $searchSql = ' AND (LOWER(u.first_name) LIKE ? OR LOWER(u.last_name) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)';
             $args[] = $like; $args[] = $like; $args[] = $like; $args[] = $like;
         }
-        $sql = 'SELECT id, email, phone, first_name, last_name, name, sex, age_range, role
+        $sql = 'SELECT id, email, phone, first_name, last_name, name, sex, age_range, role, has_photo
                 FROM users u
                 WHERE u.disabled_at IS NULL'
               . $excludeSql . $searchSql
@@ -314,6 +315,7 @@ final class Users
                 'sex'       => $r['sex']       ?? null,
                 'ageRange'  => $r['age_range'] ?? null,
                 'role'      => $r['role'],
+                'hasPhoto'  => (bool) (int) ($r['has_photo'] ?? 0),
                 // Hide synthetic placeholder emails from the picker — they're noise.
                 'syntheticEmail' => str_ends_with((string) $r['email'], '@ubuntu3.local'),
             ], $rows),

@@ -150,6 +150,18 @@ $routes = [
     ['GET',    '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
     ['POST',   '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)/get$#', fn($id, $kind) => Media::downloadSessionMedia($id, $kind)],
     ['DELETE', '#^/sessions/([a-f0-9-]{36})/media/(photo|audio)$#',     fn($id, $kind) => Media::deleteSessionMedia($id, $kind)],
+
+    // v0.3.9a — participant photo (avatar). Photo only.
+    ['POST',   '#^/participants/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::uploadParticipantMedia($id, $kind)],
+    ['GET',    '#^/participants/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::downloadParticipantMedia($id, $kind)],
+    ['POST',   '#^/participants/([a-f0-9-]{36})/media/(photo)/get$#', fn($id, $kind) => Media::downloadParticipantMedia($id, $kind)],
+    ['DELETE', '#^/participants/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::deleteParticipantMedia($id, $kind)],
+
+    // v0.3.9b — user profile photo (staff + trainee avatars in pickers).
+    ['POST',   '#^/users/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::uploadUserMedia($id, $kind)],
+    ['GET',    '#^/users/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::downloadUserMedia($id, $kind)],
+    ['POST',   '#^/users/([a-f0-9-]{36})/media/(photo)/get$#', fn($id, $kind) => Media::downloadUserMedia($id, $kind)],
+    ['DELETE', '#^/users/([a-f0-9-]{36})/media/(photo)$#',     fn($id, $kind) => Media::deleteUserMedia($id, $kind)],
 ];
 
 try {
