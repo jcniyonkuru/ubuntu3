@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.9';
+  const APP_VERSION = '0.3.10';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -53,6 +53,10 @@
     if (Array.isArray(children)) children.forEach((c) => appendChildren(parent, c));
     else if (children instanceof Node) parent.appendChild(children);
     else if (children != null) parent.appendChild(document.createTextNode(String(children)));
+  }
+  /** Separator for "start → end" date ranges; points the other way in right-to-left locales. */
+  function rangeArrow() {
+    return (window.I18N && window.I18N.isRtl && window.I18N.isRtl()) ? ' ← ' : ' → ';
   }
   function formatDate(iso) {
     if (!iso) return '';
@@ -1037,7 +1041,7 @@
         class: 'lang-btn',
         type: 'button',
         onClick: () => {
-          const order = ['fr', 'en', 'rn'];
+          const order = window.I18N.languages().map((l) => l.code);
           const cur = (window.I18N && window.I18N.getLang && window.I18N.getLang()) || 'fr';
           const next = order[(order.indexOf(cur) + 1) % order.length];
           if (window.I18N && window.I18N.setLang) window.I18N.setLang(next);
@@ -1695,7 +1699,7 @@
             el('div', { class: 'card__sub' }, [
               cohort.region || t('cohort.unknownRegion'),
               cohort.startDate ? ' · ' + formatDate(cohort.startDate) : '',
-              cohort.endDate ? ' → ' + formatDate(cohort.endDate) : ''
+              cohort.endDate ? rangeArrow() + formatDate(cohort.endDate) : ''
             ].join(''))
           ])
         ]),
@@ -1832,7 +1836,7 @@
         value: c.id,
         label: (c.name || t('common.noName')) +
           (c.startDate ? ' · ' + formatDate(c.startDate) : '') +
-          (c.endDate ? ' → ' + formatDate(c.endDate) : '')
+          (c.endDate ? rangeArrow() + formatDate(c.endDate) : '')
       })), cohortId, true);
     }
     setTitle(isEdit ? t('group.editTitle') : t('group.newTitle'));
@@ -2059,7 +2063,7 @@
             el('div', { class: 'card__title' }, [
               document.createTextNode(group.name || t('common.noName')),
               group.moodleCourseId
-                ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+                ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
                 : null
             ]),
             el('div', { class: 'card__sub' },
@@ -2173,15 +2177,15 @@
         const titleNode = el('div', { class: 'list-item__title' }, [
           document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
           p.source === 'moodle'
-            ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+            ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
             : null,
           atRisk ? el('span', {
             class: 'pill pill--at-risk',
-            style: 'margin-left:8px;font-size:11px',
+            style: 'margin-inline-start:8px;font-size:11px',
             title: t('p.atRiskTooltip', { n: streak })
           }, t('p.atRiskPill')) : null,
           isDropped ? el('span', {
-            class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)'
+            class: 'pill', style: 'margin-inline-start:8px;font-size:11px;background:#EEE;color:var(--muted)'
           }, t('p.statusDropped')) : null
         ]);
         partsSection.appendChild(el('a', {
@@ -2364,7 +2368,7 @@
       const titleNode = el('div', { class: 'card__title' }, [
         document.createTextNode(g.name || t('common.noName')),
         g.moodleCourseId
-          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
           : null
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/groups/${g.id}` }, [
@@ -2438,15 +2442,15 @@
       const titleNode = el('div', { class: 'list-item__title' }, [
         document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
         p.source === 'moodle'
-          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
           : null,
         atRisk ? el('span', {
           class: 'pill pill--at-risk',
-          style: 'margin-left:8px;font-size:11px',
+          style: 'margin-inline-start:8px;font-size:11px',
           title: t('p.atRiskTooltip', { n: streak })
         }, t('p.atRiskPill')) : null,
         isDropped
-          ? el('span', { class: 'pill', style: 'margin-left:8px;font-size:11px;background:#EEE;color:var(--muted)' }, t('p.statusDropped'))
+          ? el('span', { class: 'pill', style: 'margin-inline-start:8px;font-size:11px;background:#EEE;color:var(--muted)' }, t('p.statusDropped'))
           : null
       ]);
       root.appendChild(el('a', {
@@ -3090,7 +3094,7 @@
       const titleRow = el('div', { class: 'card__title' }, [
         document.createTextNode(s.theme || t('common.noTheme')),
         s.source === 'moodle'
-          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
           : null
       ]);
       root.appendChild(el('a', { class: 'card-link', href: `#/sessions/${s.id}` }, [
@@ -3532,7 +3536,7 @@
       const titleNode = el('div', { class: 'list-item__title' }, [
         document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
         isWalkIn
-          ? el('span', { class: 'pill', style: 'margin-left:8px;font-size:11px;background:#F5DCDD;color:var(--brand-dark)' }, t('session.walkInPill'))
+          ? el('span', { class: 'pill', style: 'margin-inline-start:8px;font-size:11px;background:#F5DCDD;color:var(--brand-dark)' }, t('session.walkInPill'))
           : null
       ]);
 
@@ -4095,7 +4099,7 @@
       const title = el('div', { class: 'list-item__title' }, [
         document.createTextNode(((p.firstName || '') + ' ' + (p.lastName || '')).trim() || t('common.noName')),
         p.source === 'moodle'
-          ? el('span', { class: 'pill pill--moodle', style: 'margin-left:8px;font-size:11px' }, t('sync.pill'))
+          ? el('span', { class: 'pill pill--moodle', style: 'margin-inline-start:8px;font-size:11px' }, t('sync.pill'))
           : null
       ]);
       const missingText = () => {

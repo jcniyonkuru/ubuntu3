@@ -69,7 +69,7 @@ final class Users
         $rawRole   = (string) ($body['role'] ?? 'trainer');
         $role      = in_array($rawRole, ['admin','trainer','trainee'], true) ? $rawRole : 'trainer';
         $lang      = $body['language'] ?? 'fr';
-        if (!in_array($lang, ['fr', 'en', 'rn'], true)) $lang = 'fr';
+        if (!in_array($lang, ['fr', 'en', 'rn', 'sw', 'ar'], true)) $lang = 'fr';
         // sendInvite controls whether a welcome email is dispatched. Defaults to TRUE
         // for trainers/admins (existing behavior) and FALSE for trainees (walk-ins).
         $sendInvite = array_key_exists('sendInvite', $body) ? (bool) $body['sendInvite'] : ($role !== 'trainee');
@@ -434,7 +434,7 @@ final class Users
         if (isset($body['role']) && in_array($body['role'], ['trainer', 'admin', 'trainee'], true)) {
             $sets[] = 'role = ?'; $vals[] = $body['role'];
         }
-        if (isset($body['language']) && in_array($body['language'], ['fr', 'en', 'rn'], true)) {
+        if (isset($body['language']) && in_array($body['language'], ['fr', 'en', 'rn', 'sw', 'ar'], true)) {
             $sets[] = 'language = ?'; $vals[] = $body['language'];
         }
         if (array_key_exists('sex', $body)) {

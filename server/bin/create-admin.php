@@ -3,7 +3,7 @@
  * Ubuntu 3.0 — Initial admin / trainer creation
  *
  * Usage on the droplet (run as the web user so the config is readable):
- *   php server/bin/create-admin.php --email=you@example.com --name="Jane Doe" [--role=admin|trainer] [--lang=fr|en|rn] [--password=...]
+ *   php server/bin/create-admin.php --email=you@example.com --name="Jane Doe" [--role=admin|trainer] [--lang=fr|en|rn|sw|ar] [--password=...]
  *
  * If --password is omitted, a 12-char random temp password is generated and printed.
  */
@@ -50,7 +50,7 @@ $pwd      = arg('password', $argv);
 if (!$email || !$first || !$last) {
     fwrite(STDERR,
         "Usage: php server/bin/create-admin.php --email=you@example.com --first=\"Jane\" --last=\"Doe\""
-      . " [--username=jane] [--role=admin|trainer] [--lang=fr|en|rn] [--password=...]\n"
+      . " [--username=jane] [--role=admin|trainer] [--lang=fr|en|rn|sw|ar] [--password=...]\n"
       . "       --first and --last are both required (was --name in v0.3.3).\n"
     );
     exit(2);
@@ -61,7 +61,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     fwrite(STDERR, "Invalid email.\n"); exit(2);
 }
 if (!in_array($role, ['admin', 'trainer'], true)) { fwrite(STDERR, "Role must be admin or trainer.\n"); exit(2); }
-if (!in_array($lang, ['fr', 'en', 'rn'], true)) { fwrite(STDERR, "Lang must be fr, en, or rn.\n"); exit(2); }
+if (!in_array($lang, ['fr', 'en', 'rn', 'sw', 'ar'], true)) { fwrite(STDERR, "Lang must be fr, en, rn, sw, or ar.\n"); exit(2); }
 $first = trim((string) $first);
 $last  = trim((string) $last);
 $name  = trim($first . ' ' . $last);

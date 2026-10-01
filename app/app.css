@@ -1464,3 +1464,55 @@ p { margin: 6px 0; }
   background: #fff;
   box-shadow: 3px 3px 6px rgba(0,0,0,.08);
 }
+
+/* ============================================================
+ *  Right-to-left locales (Arabic)
+ *
+ *  i18n.js sets <html dir="rtl"> for any locale listed in its RTL array.
+ *  Flex and grid layouts mirror on their own; the rules below only cover
+ *  what was pinned to a physical side (left/right) further up this file.
+ *  When adding a new left/right rule above, add its mirror here.
+ * ============================================================ */
+[dir="rtl"] .app-header__nav { margin-right: 0; margin-left: 8px; }
+/* Back / forward chevrons and the reports disclosure chevron point the other way. */
+[dir="rtl"] .nav-btn svg,
+[dir="rtl"] .missing-row__chev svg { transform: scaleX(-1); }
+[dir="rtl"] .missing-row.is-open .missing-row__chev { transform: rotate(-90deg); }
+[dir="rtl"] .tile--link::after { content: "‹"; float: left; }
+
+[dir="rtl"] .bell-dot { right: auto; left: -4px; }
+[dir="rtl"] .lang-menu { right: auto; left: 12px; }
+[dir="rtl"] .auth-corner { right: auto; left: 12px; }
+[dir="rtl"] .session-photo-banner__delete { right: auto; left: 8px; }
+[dir="rtl"] .fab { right: auto; left: 16px; }
+
+[dir="rtl"] .lang-menu__item,
+[dir="rtl"] .story-prompt-chip,
+[dir="rtl"] .missing-row__summary,
+[dir="rtl"] .auth-server-card .small.muted { text-align: right; }
+
+/* Emails, URLs, phone numbers and passwords are typed left-to-right even in
+   an Arabic interface; keep them readable but aligned with the other fields. */
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="url"],
+[dir="rtl"] input[type="tel"],
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[type="password"] { direction: ltr; text-align: right; }
+/* Password field keeps its left-to-right layout (eye toggle on the right)
+   whether the characters are hidden or shown, so it doesn't jump on toggle. */
+[dir="rtl"] .pw-wrap input { direction: ltr; text-align: left; }
+[dir="rtl"] .session-audio-strip { padding: 8px 12px 8px 10px; }
+
+[dir="rtl"] .rt-tb-color-swatch { margin-left: 0; margin-right: 1px; }
+[dir="rtl"] .rt-editor ul,
+[dir="rtl"] .rt-editor ol { padding-left: 0; padding-right: 22px; }
+[dir="rtl"] .cert-session-list { padding-left: 0; padding-right: 18px; }
+
+[dir="rtl"] .toggle::after { left: auto; right: 3px; }
+[dir="rtl"] .toggle:checked::after { transform: translateX(-18px); }
+
+[dir="rtl"] .att-row--walkin {
+  border-left: 1px solid #E8C7C9;
+  border-right: 4px solid var(--brand);
+}
+[dir="rtl"] .tour-coachmark__skip { margin-right: 0; margin-left: auto; }

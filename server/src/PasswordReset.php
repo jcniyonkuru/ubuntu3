@@ -113,6 +113,7 @@ final class PasswordReset
     private static function emailBody(string $lang, string $name, string $url): array
     {
         $brand = 'Ubuntu 3.0';
+        $dir = 'ltr';
         if ($lang === 'en') {
             $subject = "{$brand} — Reset your password";
             $intro = htmlspecialchars($name === '' ? 'Hello,' : "Hello {$name},");
@@ -125,6 +126,19 @@ final class PasswordReset
             $body = "Twakiriye ikibazo co guhindura ijambo banga ryawe. Kanda kuri uru rurwiriro ushire irindi rishasha. Uru rurwiriro ruzohera mu masaha 1.";
             $cta = "Hindura ijambo banga";
             $ignore = "Niwaba utisabye ico, urashobora kwirengagiza iyi meli.";
+        } elseif ($lang === 'sw') {
+            $subject = "{$brand} — Weka upya nenosiri lako";
+            $intro = htmlspecialchars($name === '' ? 'Habari,' : "Habari {$name},");
+            $body = "Tumepokea ombi la kuweka upya nenosiri lako. Bofya kiungo kilicho hapa chini ili kuchagua jipya. Kiungo hiki kitaisha muda baada ya saa 1.";
+            $cta = "Weka upya nenosiri langu";
+            $ignore = "Ikiwa hukuomba hili, unaweza kupuuza barua pepe hii.";
+        } elseif ($lang === 'ar') {
+            $dir = 'rtl';
+            $subject = "{$brand} — إعادة تعيين كلمة المرور";
+            $intro = htmlspecialchars($name === '' ? 'مرحبًا،' : "مرحبًا {$name}،");
+            $body = "تلقّينا طلبًا لإعادة تعيين كلمة المرور الخاصة بك. انقر على الرابط أدناه لاختيار كلمة مرور جديدة. تنتهي صلاحية هذا الرابط بعد ساعة واحدة.";
+            $cta = "إعادة تعيين كلمة المرور";
+            $ignore = "إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة.";
         } else {
             $subject = "{$brand} — Réinitialisation du mot de passe";
             $intro = htmlspecialchars($name === '' ? 'Bonjour,' : "Bonjour {$name},");
@@ -133,12 +147,14 @@ final class PasswordReset
             $ignore = "Si vous n'avez pas fait cette demande, vous pouvez ignorer cet email.";
         }
         $url_esc = htmlspecialchars($url);
-        $html = "<!doctype html><html><body style=\"font-family:Helvetica,Arial,sans-serif;color:#1B1B1B;\">"
+        // Anything unrecognised fell through to the French copy above.
+        $htmlLang = in_array($lang, ['en', 'rn', 'sw', 'ar'], true) ? $lang : 'fr';
+        $html = "<!doctype html><html lang=\"{$htmlLang}\" dir=\"{$dir}\"><body style=\"font-family:Helvetica,Arial,sans-serif;color:#1B1B1B;\">"
               . "<p>{$intro}</p>"
               . "<p>{$body}</p>"
               . "<p style=\"margin:24px 0;\"><a href=\"{$url_esc}\" style=\"display:inline-block;padding:12px 18px;background:#B73B3F;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;\">{$cta}</a></p>"
               . "<p style=\"color:#6B6B6B;font-size:13px;\">{$ignore}</p>"
-              . "<p style=\"color:#6B6B6B;font-size:13px;\">{$url_esc}</p>"
+              . "<p style=\"color:#6B6B6B;font-size:13px;\" dir=\"ltr\">{$url_esc}</p>"
               . "</body></html>";
         $text = strip_tags($intro) . "\n\n" . $body . "\n\n" . $url . "\n\n" . $ignore;
         return [$subject, $html, $text];

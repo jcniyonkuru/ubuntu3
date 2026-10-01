@@ -1689,7 +1689,7 @@
       formGroup('Phone (optional)', el('input', { name: 'phone', type: 'tel', autocomplete: 'tel', placeholder: '+257…' })),
       formGroup('Username (leave blank to use email)', el('input', { name: 'username', type: 'text' })),
       formGroup('Role', selectEl('role', [{ v: 'trainer', l: 'Trainer' }, { v: 'admin', l: 'Admin' }], 'trainer')),
-      formGroup('Language', selectEl('language', [{ v: 'fr', l: 'Français' }, { v: 'en', l: 'English' }, { v: 'rn', l: 'Ikirundi' }], 'fr')),
+      formGroup('Language', selectEl('language', [{ v: 'fr', l: 'Français' }, { v: 'en', l: 'English' }, { v: 'rn', l: 'Ikirundi' }, { v: 'sw', l: 'Kiswahili' }, { v: 'ar', l: 'العربية' }], 'fr')),
       el('div', { class: 'row', style: 'margin-top:8px; gap:8px; justify-content:flex-end' }, [
         el('button', { class: 'btn btn--ghost', type: 'button', onClick: () => bg.remove() }, 'Close'),
         el('button', { class: 'btn', type: 'submit' }, 'Create')
