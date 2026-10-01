@@ -200,7 +200,7 @@ curl -X POST https://me.academyubuntu.com/api/auth/forgot-password \
 
 1. Open `https://me.academyubuntu.com/` on the phone (Chrome / Safari).
 2. Log in with your admin email + temp password. You'll be forced to change it.
-3. Pick the language (FR / EN / RN) from the header.
+3. Pick the language (FR / EN / RN / SW / AR) from the header.
 4. Create a cohort → group → participant → session → mark attendance → capture a story with a photo. Watch the sync icon spin then settle on idle.
 5. From a laptop, open `https://me.academyubuntu.com/admin/`, log in, navigate to Stories. The story you just captured should be there. The "photo" link downloads the bytes.
 

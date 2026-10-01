@@ -26,7 +26,7 @@ final class MoodleAuth
      *     'moodle_user_id' => int,
      *     'email'          => string,
      *     'name'           => string,
-     *     'language'       => string ('fr' / 'en' / 'rn'),
+     *     'language'       => string ('fr' / 'en' / 'rn' / 'sw' / 'ar'),
      *   ]
      */
     public static function authenticate(string $identifier, string $password): ?array
@@ -84,7 +84,7 @@ final class MoodleAuth
             return null;
         }
         $lang = strtolower(substr((string) ($info['lang'] ?? 'fr'), 0, 2));
-        if (!in_array($lang, ['fr', 'en', 'rn'], true)) $lang = 'fr';
+        if (!in_array($lang, ['fr', 'en', 'rn', 'sw', 'ar'], true)) $lang = 'fr';
 
         $profile = [
             'moodle_user_id' => (int) $info['userid'],

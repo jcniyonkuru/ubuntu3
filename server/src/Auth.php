@@ -273,7 +273,7 @@ final class Auth
             $lastName  = $parts[1] ?? '';
         }
         if ($firstName === '') $firstName = $username;   // last-resort fallback
-        $lang     = in_array($profile['language'], ['fr', 'en', 'rn'], true) ? $profile['language'] : 'fr';
+        $lang     = in_array($profile['language'], ['fr', 'en', 'rn', 'sw', 'ar'], true) ? $profile['language'] : 'fr';
 
         $pdo->prepare(
             'INSERT INTO users (id, email, username, password_hash, name, first_name, last_name, role, language, must_change_password, moodle_user_id, created_at, updated_at)
