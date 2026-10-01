@@ -14,7 +14,7 @@
   // Visible app version. Bump this and the CACHE constant in
   // service-worker.js together when cutting a release. Exposed on window
   // so DevTools and tests can read it without parsing source.
-  const APP_VERSION = '0.3.8';
+  const APP_VERSION = '0.3.9';
   window.UBUNTU3_VERSION = APP_VERSION;
 
   const SEX_OPTIONS = ['F', 'M', 'NB'];
@@ -264,6 +264,52 @@
   };
   function thumbIcon(kind) {
     return el('div', { class: 'thumb thumb--icon', html: THUMB_ICONS[kind] || '' });
+  }
+  // v0.3.9a — participant avatar: the photo when one is attached,
+  // otherwise the generic participants glyph. extraClass lets dense
+  // rows (attendance) request the small round variant.
+  function personThumb(p, extraClass) {
+    const suffix = extraClass ? ' ' + extraClass : '';
+    if (p && p.photo) {
+      try {
+        const wrap = el('div', { class: 'thumb thumb--avatar' + suffix });
+        const img = el('img', { alt: '' });
+        img.src = URL.createObjectURL(p.photo);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        wrap.appendChild(img);
+        return wrap;
+      } catch (e) { /* fall through to the icon */ }
+    }
+    return el('div', { class: 'thumb thumb--icon thumb--avatar' + suffix, html: THUMB_ICONS.participants || '' });
+  }
+  // v0.3.9b — avatar for a server-side user (staff picker, participant
+  // picker, walk-in picker). Shows the icon immediately; when the
+  // directory says the user has a photo, fetches it once per app session
+  // and swaps it in. `localBlob` short-circuits with an already-local
+  // photo (e.g. a participant photographed in another course).
+  const USER_AVATAR_URLS = new Map(); // userId → Promise<objectURL|null>
+  function userAvatar(u, localBlob) {
+    const wrap = el('div', { class: 'thumb thumb--icon thumb--avatar thumb--sm', html: THUMB_ICONS.participants || '' });
+    const show = (url) => {
+      if (!url) return;
+      wrap.className = 'thumb thumb--avatar thumb--sm';
+      wrap.innerHTML = '';
+      wrap.appendChild(el('img', { src: url, alt: '' }));
+    };
+    if (localBlob) {
+      try { show(URL.createObjectURL(localBlob)); return wrap; } catch (e) { /* fall through */ }
+    }
+    if (u && u.id && u.hasPhoto) {
+      let pr = USER_AVATAR_URLS.get(u.id);
+      if (!pr) {
+        pr = window.API.fetchMediaOn('users', u.id, 'photo')
+          .then((b) => URL.createObjectURL(b))
+          .catch(() => null);
+        USER_AVATAR_URLS.set(u.id, pr);
+      }
+      pr.then(show);
+    }
+    return wrap;
   }
   // Course thumbnail: when the server-side Moodle sync has populated an
   // imageUrl, render it as an <img>; otherwise fall back to the Courses
@@ -812,7 +858,26 @@
     navUpdateButtons();
   }
 
+  // Guard against overlapping renders. The boot sequence fires
+  // SYNC.syncNow() without awaiting it and renders the current view;
+  // when the sync finishes it triggers handleRoute() again. If the two
+  // runs overlap, each clears #view and then both append their cards —
+  // duplicating everything on the page (most visible on the Courses tab
+  // after a refresh). Serialize the calls: a new call waits for the
+  // in-flight render, and only the newest queued call re-renders.
+  let ROUTE_SEQ = 0;
+  let ROUTE_INFLIGHT = null;
   async function handleRoute() {
+    const seq = ++ROUTE_SEQ;
+    while (ROUTE_INFLIGHT) {
+      try { await ROUTE_INFLIGHT; } catch (e) {}
+      if (seq !== ROUTE_SEQ) return; // superseded by a newer call
+    }
+    ROUTE_INFLIGHT = renderRoute();
+    try { await ROUTE_INFLIGHT; } finally { ROUTE_INFLIGHT = null; }
+  }
+
+  async function renderRoute() {
     const path = normalizeHash(location.hash);
     const match = matchRoute(path);
     const view = $('#view');
@@ -1617,8 +1682,9 @@
     if (!cohort) { root.appendChild(notFoundView()); return; }
     setTitle(cohort.name || t('cohort.defaultTitle'));
 
+    // Newest first, so a course you just created shows up at the top.
     const groups = (await DB.byIndex('groups', 'cohortId', cohort.id))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
@@ -1641,13 +1707,15 @@
     // Action circle for + Course. Slotted under the search bar when
     // the cohort has at least one course; otherwise sits right under
     // the heading so trainers can still create the first one.
-    const cohortActions = actionCircles([
+    // v0.3.9 — hidden entirely on past cohorts: adding a course to a
+    // cohort that has already ended is not allowed.
+    const cohortActions = cohortIsPast(cohort) ? null : actionCircles([
       { icon: ACTION_ICONS.plus, label: t('actions.newCourse'),
         href: `#/cohorts/${cohort.id}/groups/new` }
     ]);
 
     if (!groups.length) {
-      root.appendChild(cohortActions);
+      if (cohortActions) root.appendChild(cohortActions);
       root.appendChild(emptyState(t('cohort.noGroupsTitle'), t('cohort.noGroupsBody')));
       return;
     }
@@ -1689,8 +1757,34 @@
     // Slot the action circle row right after the search bar
     // (heading → search → action → courses).
     const cohortSearchBar = coursesSection.querySelector('.list-search');
-    if (cohortSearchBar) cohortSearchBar.after(cohortActions);
-    else coursesSection.appendChild(cohortActions);
+    if (cohortActions) {
+      if (cohortSearchBar) cohortSearchBar.after(cohortActions);
+      else coursesSection.appendChild(cohortActions);
+    }
+  }
+
+  // ---------- Cohort date helpers (v0.3.9) ----------
+  // Dates are stored as yyyy-mm-dd strings (from <input type=date>), so
+  // plain string comparison against a local yyyy-mm-dd "today" is safe.
+  function localTodayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+  // A cohort is "past" once its end date is behind us. Cohorts without an
+  // end date are never considered past (still ongoing / dates unknown).
+  function cohortIsPast(c) {
+    return !!(c && c.endDate && String(c.endDate).slice(0, 10) < localTodayStr());
+  }
+  // "Current" = today falls between start and end (inclusive). A cohort
+  // that has started but has no end date counts as current too.
+  function cohortIsCurrent(c) {
+    if (!c || !c.startDate) return false;
+    const today = localTodayStr();
+    const start = String(c.startDate).slice(0, 10);
+    if (start > today) return false;
+    return !c.endDate || String(c.endDate).slice(0, 10) >= today;
   }
 
   // ---------- Group form ----------
@@ -1705,8 +1799,42 @@
     } else {
       group = { cohortId, name: '', facilitator: '', facilitatorIds: [] };
     }
-    const cohort = await DB.get('cohorts', cohortId);
-    if (!cohort) { root.appendChild(notFoundView()); return; }
+
+    // v0.3.9 — two ways into the "new course" form:
+    //   · from a cohort page  → cohortId in the route, shown as a fixed hint
+    //   · from the Courses tab → no cohortId, pick from a dropdown limited to
+    //     current + upcoming cohorts (past cohorts are never offered, and a
+    //     past cohort in the route is blocked below on submit).
+    let cohort = null;
+    let cohortSelect = null;
+    if (cohortId) {
+      cohort = await DB.get('cohorts', cohortId);
+      if (!cohort) { root.appendChild(notFoundView()); return; }
+    } else {
+      const eligible = (await DB.all('cohorts'))
+        .filter((c) => !cohortIsPast(c))
+        .sort((a, b) => String(a.startDate || '9999').localeCompare(String(b.startDate || '9999')));
+      if (!eligible.length) {
+        setTitle(t('group.newTitle'));
+        root.appendChild(emptyState(
+          t('group.newTitle'),
+          t('group.noCohortEligible'),
+          '#/cohorts/new',
+          t('cohorts.emptyCta')
+        ));
+        return;
+      }
+      // Default to the cohort we're currently inside of (today between
+      // start and end); otherwise the next upcoming one.
+      const current = eligible.find(cohortIsCurrent);
+      cohortId = (current || eligible[0]).id;
+      cohortSelect = selectEl('cohortId', eligible.map((c) => ({
+        value: c.id,
+        label: (c.name || t('common.noName')) +
+          (c.startDate ? ' · ' + formatDate(c.startDate) : '') +
+          (c.endDate ? ' → ' + formatDate(c.endDate) : '')
+      })), cohortId, true);
+    }
     setTitle(isEdit ? t('group.editTitle') : t('group.newTitle'));
 
     // v0.3.5i — load staff (trainers + admins) so we can pick course
@@ -1816,6 +1944,7 @@
             style: 'display:flex; align-items:center; gap:10px; padding:6px 10px; cursor:pointer; border-bottom:1px solid var(--border)'
           }, [
             cb,
+            userAvatar(u),
             el('div', { class: 'grow' }, [
               el('div', null, staffNameOf(u)),
               el('div', { class: 'small muted' }, sub)
@@ -1854,16 +1983,32 @@
         toast(t('group.courseIdInvalid'));
         return;
       }
+      // v0.3.9 — resolve the cohort from the dropdown when present, and
+      // refuse to attach a new course to a cohort that has already ended
+      // (covers both the dropdown path and a stale /cohorts/:id/groups/new
+      // link to a past cohort).
+      if (cohortSelect) cohortId = cohortSelect.value;
+      if (!isEdit) {
+        const chosen = await DB.get('cohorts', cohortId);
+        if (!chosen || cohortIsPast(chosen)) { toast(t('group.pastCohortBlocked')); return; }
+      }
       group.cohortId = cohortId;
       await DB.put('groups', group, CURRENT_AUTHOR.id);
       toast(isEdit ? t('group.updated') : t('group.created'));
-      go('/groups/' + group.id);
+      // After creating, go back to the list it came from (new course sits
+      // on top) instead of jumping into the new course's detail page.
+      // Editing still returns to the course itself.
+      if (isEdit) go('/groups/' + group.id);
+      else if (params.cohortId) go('/cohorts/' + params.cohortId);
+      else go('/groups');
     } }, [
       // Info banner — the group itself isn't synced, but its sessions / participants are
       isEdit && group.moodleCourseId
         ? el('div', { class: 'synced-banner', html: t('sync.bannerGroup') })
         : null,
-      el('p', { class: 'hint' }, t('group.cohortLabel', { name: cohort.name || '—' })),
+      cohortSelect
+        ? fg(t('group.cohortSelectLabel'), cohortSelect)
+        : el('p', { class: 'hint' }, t('group.cohortLabel', { name: (cohort && cohort.name) || '—' })),
       fg(t('group.nameLabel'), el('input', { name: 'name', type: 'text', required: true, value: group.name || '', placeholder: t('group.namePh') })),
       fg(t('group.facilitatorsLabel'), facBlock),
       fg(t('group.courseIdLabel'), el('input', {
@@ -1903,7 +2048,8 @@
       .filter((p) => !p.walkInSessionId)
       .sort((a, b) => ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
     const sessions = (await DB.byIndex('sessions', 'groupId', group.id))
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') ||
+                      (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
     root.appendChild(el('div', { class: 'card card--accent' }, [
       el('div', { class: 'row between' }, [
@@ -2044,7 +2190,7 @@
           style: isDropped ? 'opacity:.62' : ''
         }, [
           el('div', { class: 'list-item' }, [
-            thumbIcon('participants'),
+            personThumb(p),
             el('div', { class: 'grow' }, [
               titleNode,
               el('div', { class: 'list-item__sub' }, sub)
@@ -2139,8 +2285,9 @@
   async function groupsListView(_params, root) {
     setTitle(t('dash.tile.groups'));
     // v0.3.5j — same "my courses only" filter the dashboard applies.
+    // Newest first, so a course you just created shows up at the top.
     const groups = applyMyCourses(await DB.all('groups'))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
     // v0.3.7 — action-circle for Moodle sync (replaces the block button).
     let coursesSyncRef = null;
@@ -2150,7 +2297,8 @@
         label: t('actions.eLearning'),
         ref: (n) => { coursesSyncRef = n; },
         onClick: async () => {
-          if (!navigator.onLine) { toast(t('sync.status.offline')); return; }
+          // No navigator.onLine gate — unreliable in installed PWAs.
+          // If we're really offline the request fails and the catch toasts.
           const labelEl = coursesSyncRef.querySelector('.action-circle__label');
           const origLabel = labelEl.textContent;
           coursesSyncRef.disabled = true;
@@ -2180,7 +2328,11 @@
             }
           }
         }
-      }
+      },
+      // v0.3.9 — + Course straight from the Courses tab (same pattern as
+      // Sessions / Stories). The form itself offers a cohort picker limited
+      // to current + upcoming cohorts.
+      { icon: ACTION_ICONS.plus, label: t('actions.newCourse'), href: '#/groups/new' }
     ]));
 
     if (!groups.length) {
@@ -2303,7 +2455,7 @@
         style: isDropped ? 'opacity:.62' : ''
       }, [
         el('div', { class: 'list-item' }, [
-          thumbIcon('participants'),
+          personThumb(p),
           el('div', { class: 'grow' }, [
             titleNode,
             el('div', { class: 'list-item__sub' }, sub)
@@ -2379,6 +2531,13 @@
       go('/groups/' + group.id);
     }
 
+    // v0.3.9b — local participant photos by user id, so a trainee already
+    // photographed in another course shows their avatar in this picker too.
+    const localPhotoByUser = new Map();
+    (await DB.all('participants')).forEach((pp) => {
+      if (pp.userId && pp.photo && !localPhotoByUser.has(pp.userId)) localPhotoByUser.set(pp.userId, pp.photo);
+    });
+
     let inflight = null;
     async function runSearch() {
       const q = search.value.trim();
@@ -2406,6 +2565,7 @@
             class: 'list-item', type: 'button',
             onClick: () => pickUser(u)
           }, [
+            userAvatar(u, localPhotoByUser.get(u.id)),
             el('div', { class: 'grow' }, [
               el('div', { class: 'list-item__title' }, ((u.firstName || '') + ' ' + (u.lastName || '')).trim() || t('common.noName')),
               el('div', { class: 'list-item__sub' }, [
@@ -2453,7 +2613,7 @@
       dupPanel.appendChild(el('h4', { style: 'margin:0 0 4px' }, t('picker.dupTitle')));
       dupPanel.appendChild(el('p', { class: 'small muted', style: 'margin:0 0 10px' }, t('picker.dupBody')));
       dupPanel.appendChild(el('div', { class: 'list-item', style: 'margin-bottom:10px' }, [
-        thumbIcon('participants'),
+        personThumb(p),
         el('div', { class: 'grow' }, [
           el('div', { class: 'list-item__title' }, fullName),
           el('div', { class: 'list-item__sub' }, sub || t('common.noDetails'))
@@ -2696,6 +2856,45 @@
     const firstNameInput = el('input', { name: 'firstName', type: 'text', required: true, value: p.firstName || '' });
     const lastNameInput  = el('input', { name: 'lastName',  type: 'text', value: p.lastName  || '' });
     const contactInput   = el('input', { name: 'contact',   type: 'text', value: p.contact   || '', placeholder: t('common.contactPh') });
+
+    // v0.3.9a — avatar photo. `newPhoto` stays undefined until the trainer
+    // touches it: a Blob means replace, null means remove.
+    let newPhoto;
+    const photoPreview = el('div', { class: 'thumb thumb--avatar', style: 'width:84px;height:84px' });
+    function renderAvatarPreview() {
+      const blob = (newPhoto !== undefined) ? newPhoto : p.photo;
+      photoPreview.className = 'thumb thumb--avatar' + (blob ? '' : ' thumb--icon');
+      photoPreview.innerHTML = blob ? '' : (THUMB_ICONS.participants || '');
+      if (blob) {
+        const img = el('img', { alt: '' });
+        img.src = URL.createObjectURL(blob);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        photoPreview.appendChild(img);
+      }
+    }
+    renderAvatarPreview();
+    const photoField = fg(t('story.photoLabel'), el('div', { class: 'row', style: 'gap:12px; align-items:center; flex-wrap:wrap' }, [
+      photoPreview,
+      el('label', { class: 'btn btn--sm btn--soft' }, [
+        t('story.takePhoto'),
+        el('input', {
+          type: 'file', accept: 'image/*', capture: 'user', style: 'display:none',
+          onChange: async (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            // Compress to a small JPEG — avatars sync to every device, so
+            // a raw 3 MB camera shot would be needless bandwidth.
+            try { newPhoto = await compressImageToBlob(f, 512, 0.8); }
+            catch (err) { newPhoto = f; }
+            renderAvatarPreview();
+          }
+        })
+      ]),
+      el('button', {
+        type: 'button', class: 'btn btn--sm btn--ghost',
+        onClick: () => { newPhoto = null; renderAvatarPreview(); }
+      }, t('session.photoDelete'))
+    ]));
     if (synced) {
       firstNameInput.disabled = true;
       lastNameInput.disabled  = true;
@@ -2713,12 +2912,26 @@
       p.sex = form.elements['sex'].value;
       p.ageRange = form.elements['ageRange'].value;
       p.groupId = groupId;
+      // v0.3.9a — apply avatar change (Blob = replace, null = remove)
+      if (newPhoto !== undefined) {
+        const removed = newPhoto === null && p.hasPhoto;
+        p.photo = newPhoto;
+        p.hasPhoto = !!newPhoto;
+        p.photoUploaded = false;
+        if (removed) {
+          // Best-effort server delete so the file doesn't linger; the
+          // hasPhoto=0 row syncs regardless.
+          try { await window.API.deleteMediaOn('participants', p.id, 'photo'); } catch (err) {}
+        }
+      }
       await DB.put('participants', p, CURRENT_AUTHOR.id);
+      if (window.SYNC) window.SYNC.syncNow().catch(() => {});
       toast(isEdit ? t('p.updated') : t('p.added'));
       go('/groups/' + groupId);
     } }, [
       synced ? el('div', { class: 'synced-banner', html: t('sync.bannerParticipant') }) : null,
       el('p', { class: 'hint' }, t('p.groupLabel', { name: group.name || '—' })),
+      photoField,
       el('div', { class: 'row', style: 'gap:12px' }, [
         el('div', { class: 'grow' }, fg(t('common.firstName'), firstNameInput)),
         el('div', { class: 'grow' }, fg(t('common.lastName'),  lastNameInput))
@@ -2815,7 +3028,8 @@
     // v0.3.5j — "my courses only" filter: hide sessions whose course doesn't
     // list the current user as a facilitator.
     const sessions = applyMySessions(await DB.all('sessions'), groups)
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') ||
+                      (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     const groupName = (id) => (groups.find((g) => g.id === id) || {}).name || '';
     const attendance = await DB.all('attendance');
 
@@ -2908,6 +3122,9 @@
       const q = new URLSearchParams((location.hash.split('?')[1] || ''));
       session = { groupId: q.get('groupId') || '', date: todayInput(), theme: '', location: '', notes: '' };
     }
+    // When the form was opened from a course page ("+ Session"), saving
+    // returns to that course instead of the global Sessions list.
+    const cameFromGroup = !isEdit && !!session.groupId;
     setTitle(isEdit ? t('session.editTitle') : t('session.newTitle'));
 
     const groups = (await DB.all('groups')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -2964,7 +3181,12 @@
       }
       toast(isEdit ? t('session.updated') : t('session.created'));
       if (window.SYNC) window.SYNC.syncNow().catch(() => {});
-      go('/sessions/' + session.id);
+      // After creating, go back to the list it came from (new session on
+      // top) instead of jumping into the new session's detail page.
+      // Editing still returns to the session itself.
+      if (isEdit) go('/sessions/' + session.id);
+      else if (cameFromGroup) go('/groups/' + session.groupId);
+      else go('/sessions');
     } }, [
       synced ? el('div', { class: 'synced-banner', html: t('sync.bannerSession') }) : null,
       fg(t('session.groupLabel'), groupSel),
@@ -3359,6 +3581,7 @@
         : null;
 
       const row = el('div', { class: 'att-row' + (isWalkIn ? ' att-row--walkin' : '') }, [
+        personThumb(p, 'thumb--sm'),
         el('div', { class: 'grow' }, [
           titleNode,
           el('div', { class: 'list-item__sub' }, [sexLabel(p.sex), p.ageRange || ''].filter(Boolean).join(' · '))
@@ -3518,6 +3741,7 @@
                   renderWalkInPicker();
                 }
               }, [
+                userAvatar(u, (participants.find((p) => p.userId === u.id && p.photo) || {}).photo),
                 el('div', { class: 'grow' }, [
                   el('div', { class: 'list-item__title' }, ((u.firstName || '') + ' ' + (u.lastName || '')).trim() || t('common.noName')),
                   el('div', { class: 'list-item__sub' }, [
@@ -3708,6 +3932,51 @@
     const attSearch = attendanceList.querySelector('.list-search');
     if (attSearch) attSearch.after(sessActions);
     else attendanceList.parentNode.insertBefore(sessActions, attendanceList);
+
+    // ---------- Related stories ----------
+    // Stories linked to THIS session, shown at the bottom of the page.
+    // The "+" next to the heading opens the story form pre-linked to the
+    // session (the form reads ?sessionId= from the URL).
+    const sessionStories = (await DB.byIndex('stories', 'sessionId', session.id))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const newStoryHref = '#/stories/new?sessionId=' + session.id;
+    root.appendChild(sectionHeading('stories', t('session.storiesHeading', { n: sessionStories.length })));
+
+    // Same layout as Attendance: search bar over the rows, then a row of
+    // action circles right below it ("+" opens the pre-linked story form).
+    const storiesList = el('div');
+    sessionStories.forEach((s) => {
+      storiesList.appendChild(el('a', { class: 'card-link session-story', href: `#/stories/${s.id}/edit` }, [
+        el('div', { class: 'list-item' }, [
+          storyThumb(s),
+          el('div', { class: 'grow' }, [
+            el('div', { class: 'list-item__title' }, (() => {
+              const plain = stripHtml(s.text || '');
+              return plain ? (plain.length > 60 ? plain.slice(0, 60) + '…' : plain) : t('common.noText');
+            })()),
+            el('div', { class: 'list-item__sub' }, [
+              formatDate(s.updatedAt),
+              s.consent ? t('stories.hasConsent') : t('stories.noConsent')
+            ].filter(Boolean).join(' · '))
+          ])
+        ])
+      ]));
+    });
+    root.appendChild(storiesList);
+    if (sessionStories.length) {
+      attachListSearch(storiesList, {
+        key: 'pwa.session.' + session.id + '.stories',
+        placeholder: t('common.searchPh'),
+        itemSelector: '.session-story',
+        position: 'beforeItems',
+      });
+    }
+    const storyActions = actionCircles([
+      { icon: ACTION_ICONS.plus, label: t('actions.newStory'), href: newStoryHref }
+    ]);
+    const storySearch = storiesList.querySelector('.list-search');
+    if (storySearch) storySearch.after(storyActions);
+    else storiesList.parentNode.insertBefore(storyActions, storiesList);
 
     // v0.3.8 — Quick session resume. When the session is dated today
     // (the most likely "trainer just walked into the room" scenario),
@@ -3981,6 +4250,10 @@
         photo: null, audio: null, consent: false
       };
     }
+    // When the form was opened from a session page ("+" in the session's
+    // stories section), saving returns to that session instead of the
+    // global Stories list.
+    const cameFromSession = !isEdit && !!story.sessionId;
     setTitle(isEdit ? t('story.editTitle') : t('story.newTitle'));
 
     const sessions = (await DB.all('sessions')).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -4106,7 +4379,11 @@
       toast(isEdit ? t('story.updated') : t('story.created'));
       // Kick off a background sync (uploads media)
       if (window.SYNC) window.SYNC.syncNow().catch(() => {});
-      go('/stories');
+      // Back to where the trainer came from: the session page if the story
+      // was started there, otherwise the Stories list (newest on top).
+      // Never the new story's own edit page.
+      if (cameFromSession && story.sessionId) go('/sessions/' + story.sessionId);
+      else go('/stories');
     } }, [
       fg(t('story.textLabel'), rtEditor.wrapper),
       promptsCard,
@@ -4504,9 +4781,68 @@
     ]));
 
     // Profile
+    // v0.3.9b — own profile photo. Shown as the avatar next to your name
+    // in the staff / participant pickers on every device. Uploads straight
+    // to the server (needs to be online).
+    const meId = ((window.API && window.API.getUser()) || {}).id || null;
+    const mePreview = el('div', { class: 'thumb thumb--icon thumb--avatar', style: 'width:84px;height:84px', html: THUMB_ICONS.participants || '' });
+    function showMyPhoto(blob) {
+      mePreview.className = 'thumb thumb--avatar';
+      mePreview.style.width = '84px'; mePreview.style.height = '84px';
+      mePreview.innerHTML = '';
+      const img = el('img', { alt: '' });
+      img.src = URL.createObjectURL(blob);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      mePreview.appendChild(img);
+    }
+    function resetMyPhoto() {
+      mePreview.className = 'thumb thumb--icon thumb--avatar';
+      mePreview.style.width = '84px'; mePreview.style.height = '84px';
+      mePreview.innerHTML = THUMB_ICONS.participants || '';
+    }
+    if (meId) {
+      window.API.fetchMediaOn('users', meId, 'photo').then(showMyPhoto).catch(() => {});
+    }
+    const myPhotoRow = meId ? fg(t('common.photo'), el('div', { class: 'row', style: 'gap:12px; align-items:center; flex-wrap:wrap' }, [
+      mePreview,
+      el('label', { class: 'btn btn--sm btn--soft' }, [
+        t('story.takePhoto'),
+        el('input', {
+          type: 'file', accept: 'image/*', capture: 'user', style: 'display:none',
+          onChange: async (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            let blob;
+            try { blob = await compressImageToBlob(f, 512, 0.8); } catch (err) { blob = f; }
+            try {
+              await window.API.uploadMediaOn('users', meId, 'photo', blob);
+              USER_AVATAR_URLS.delete(meId);
+              showMyPhoto(blob);
+              toast(t('toast.profileSaved'));
+            } catch (err) {
+              toast(err && err.code === 'network' ? t('auth.networkError') : (err.message || t('common.error')));
+            }
+          }
+        })
+      ]),
+      el('button', {
+        type: 'button', class: 'btn btn--sm btn--ghost',
+        onClick: async () => {
+          try {
+            await window.API.deleteMediaOn('users', meId, 'photo');
+            USER_AVATAR_URLS.delete(meId);
+            resetMyPhoto();
+            toast(t('toast.profileSaved'));
+          } catch (err) {
+            toast(err && err.code === 'network' ? t('auth.networkError') : (err.message || t('common.error')));
+          }
+        }
+      }, t('session.photoDelete'))
+    ])) : null;
     root.appendChild(el('div', { class: 'card' }, [
       el('h3', null, t('more.profile')),
       el('p', { class: 'muted small' }, t('more.profileNote')),
+      myPhotoRow,
       fg(t('common.name'), el('input', { id: 'profile-name', type: 'text', value: CURRENT_AUTHOR.name || '' })),
       el('button', {
         class: 'btn btn--sm',
@@ -5129,6 +5465,21 @@
   }
 
   /**
+   * v0.3.9a — same compression but resolving to a JPEG Blob. Used for
+   * participant avatars, which are stored/synced as binary media rather
+   * than inline data URIs.
+   */
+  function compressImageToBlob(file, maxWidth, quality) {
+    return compressImageToDataUrl(file, maxWidth, quality).then((dataUrl) => {
+      const b64 = dataUrl.split(',')[1];
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: 'image/jpeg' });
+    });
+  }
+
+  /**
    * Install a live-filter search bar at the top of a list view.
    *
    * Call this AFTER the cards have been appended to `parent`. It snapshots
@@ -5424,6 +5775,7 @@
   route('/cohorts/:id/edit', cohortFormView);
   route('/cohorts/:cohortId/groups/new', groupFormView);
   route('/groups', groupsListView);
+  route('/groups/new', (_p, r) => groupFormView({}, r));   // v0.3.9 — must precede /groups/:id
   route('/groups/:id', groupDetailView);
   route('/groups/:id/edit', groupFormView);
   route('/groups/:groupId/participants/new', participantFormView);

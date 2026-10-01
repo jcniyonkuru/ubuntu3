@@ -310,6 +310,262 @@ final class Media
     public static function downloadSessionPhoto(string $sessionId): void { self::downloadSessionMedia($sessionId, 'photo'); }
     public static function deleteSessionPhoto(string $sessionId): void   { self::deleteSessionMedia($sessionId, 'photo'); }
 
+    // -----------------------------------------------------------
+    //  v0.3.9a — participant photo (avatar). Photo only; mirrors the
+    //  session media path with table `participants` and its own
+    //  storage directory.
+    // -----------------------------------------------------------
+
+    private static function participantStorageDir(): string
+    {
+        $dir = dirname(__DIR__) . '/storage/participants';
+        if (!is_dir($dir)) {
+            if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+                Response::error('server_misconfigured', 'Storage directory cannot be created. Check permissions on server/storage.', 500);
+            }
+        }
+        return $dir;
+    }
+
+    /** POST /api/participants/{id}/media/photo  (multipart, file field "file"). */
+    public static function uploadParticipantMedia(string $participantId, string $kind): void
+    {
+        $user = Auth::requireUser();
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+
+        $pdo = Db::pdo();
+        $stmt = $pdo->prepare('SELECT id FROM participants WHERE id = ? AND (deleted_at IS NULL) LIMIT 1');
+        $stmt->execute([$participantId]);
+        if (!$stmt->fetch()) Response::error('not_found', 'Participant not found.', 404);
+
+        // Pull file from multipart, fall back to raw body
+        $tmpPath = null; $mime = null; $size = 0;
+        if (!empty($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
+            if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                Response::error('upload_failed', 'Upload error code ' . $_FILES['file']['error'], 400);
+            }
+            $tmpPath = $_FILES['file']['tmp_name'];
+            $mime    = (string) ($_FILES['file']['type'] ?? '');
+            $size    = (int) ($_FILES['file']['size'] ?? 0);
+        } else {
+            $raw = file_get_contents('php://input');
+            if ($raw === false || $raw === '') Response::error('bad_request', 'No file in body.', 400);
+            $size = strlen($raw);
+            $mime = $_SERVER['HTTP_CONTENT_TYPE'] ?? ($_SERVER['CONTENT_TYPE'] ?? '');
+            $tmpPath = tempnam(sys_get_temp_dir(), 'ubuntu30');
+            file_put_contents($tmpPath, $raw);
+        }
+
+        if ($size <= 0) Response::error('bad_request', 'Empty upload.', 400);
+        if ($size > self::MAX_BYTES) Response::error('too_large', 'File exceeds 10 MB.', 413);
+
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $sniff = finfo_file($finfo, $tmpPath);
+            finfo_close($finfo);
+            if ($sniff) $mime = $sniff;
+        }
+        $allowed = self::ALLOWED['photo'];
+        if (!isset($allowed[$mime])) {
+            Response::error('unsupported_media', 'Mime type not allowed: ' . $mime, 415);
+        }
+        $ext = $allowed[$mime];
+
+        $dir = self::participantStorageDir();
+        foreach (glob($dir . '/' . $participantId . '.*') ?: [] as $f) @unlink($f);
+        $path = $dir . '/' . $participantId . '.' . $ext;
+        if (!@rename($tmpPath, $path)) {
+            if (!@copy($tmpPath, $path)) {
+                Response::error('write_failed', 'Could not write file to storage.', 500);
+            }
+            @unlink($tmpPath);
+        }
+        @chmod($path, 0644);
+
+        $now = Db::nowUtc();
+        $pdo->prepare(
+            'UPDATE participants SET has_photo = 1, server_updated_at = ?, author_id = COALESCE(author_id, ?) WHERE id = ?'
+        )->execute([$now, $user['id'], $participantId]);
+
+        Response::ok([
+            'mime'          => $mime,
+            'size'          => $size,
+            'participantId' => $participantId,
+            'kind'          => 'photo',
+        ]);
+    }
+
+    /** GET|POST(/get) /api/participants/{id}/media/photo */
+    public static function downloadParticipantMedia(string $participantId, string $kind): void
+    {
+        Auth::requireUser();
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+        $dir = self::participantStorageDir();
+        $candidates = glob($dir . '/' . $participantId . '.*') ?: [];
+        if (!$candidates) {
+            // Self-heal: row claims has_photo=1 but there's no file.
+            Db::pdo()->prepare(
+                'UPDATE participants SET has_photo = 0, server_updated_at = ?
+                 WHERE id = ? AND has_photo = 1'
+            )->execute([Db::nowUtc(), $participantId]);
+            Response::error('not_found', 'Media not found.', 404);
+        }
+        $path = $candidates[0];
+        $ext  = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $mimeMap = [
+            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',  'webp' => 'image/webp',
+            'heic' => 'image/heic',
+        ];
+        $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($path));
+        header('Cache-Control: private, max-age=86400');
+        readfile($path);
+        exit;
+    }
+
+    /** DELETE /api/participants/{id}/media/photo */
+    public static function deleteParticipantMedia(string $participantId, string $kind): void
+    {
+        Auth::requireUser();
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+        $dir = self::participantStorageDir();
+        foreach (glob($dir . '/' . $participantId . '.*') ?: [] as $f) @unlink($f);
+        Db::pdo()->prepare(
+            'UPDATE participants SET has_photo = 0, server_updated_at = ? WHERE id = ?'
+        )->execute([Db::nowUtc(), $participantId]);
+        Response::ok();
+    }
+
+    // -----------------------------------------------------------
+    //  v0.3.9b — user profile photo (trainers / admins / trainees).
+    //  Shown as avatars in the staff and participant pickers. A user
+    //  can manage their own photo; admins can manage anyone's.
+    // -----------------------------------------------------------
+
+    private static function userStorageDir(): string
+    {
+        $dir = dirname(__DIR__) . '/storage/users';
+        if (!is_dir($dir)) {
+            if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+                Response::error('server_misconfigured', 'Storage directory cannot be created. Check permissions on server/storage.', 500);
+            }
+        }
+        return $dir;
+    }
+
+    private static function requireSelfOrAdmin(string $userId): array
+    {
+        $user = Auth::requireUser();
+        if ($user['id'] !== $userId && ($user['role'] ?? '') !== 'admin') {
+            Response::error('forbidden', 'You can only manage your own photo.', 403);
+        }
+        return $user;
+    }
+
+    /** POST /api/users/{id}/media/photo  (multipart, file field "file"). */
+    public static function uploadUserMedia(string $userId, string $kind): void
+    {
+        self::requireSelfOrAdmin($userId);
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+
+        $pdo = Db::pdo();
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE id = ? AND (disabled_at IS NULL) LIMIT 1');
+        $stmt->execute([$userId]);
+        if (!$stmt->fetch()) Response::error('not_found', 'User not found.', 404);
+
+        // Pull file from multipart, fall back to raw body
+        $tmpPath = null; $mime = null; $size = 0;
+        if (!empty($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
+            if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                Response::error('upload_failed', 'Upload error code ' . $_FILES['file']['error'], 400);
+            }
+            $tmpPath = $_FILES['file']['tmp_name'];
+            $mime    = (string) ($_FILES['file']['type'] ?? '');
+            $size    = (int) ($_FILES['file']['size'] ?? 0);
+        } else {
+            $raw = file_get_contents('php://input');
+            if ($raw === false || $raw === '') Response::error('bad_request', 'No file in body.', 400);
+            $size = strlen($raw);
+            $mime = $_SERVER['HTTP_CONTENT_TYPE'] ?? ($_SERVER['CONTENT_TYPE'] ?? '');
+            $tmpPath = tempnam(sys_get_temp_dir(), 'ubuntu30');
+            file_put_contents($tmpPath, $raw);
+        }
+
+        if ($size <= 0) Response::error('bad_request', 'Empty upload.', 400);
+        if ($size > self::MAX_BYTES) Response::error('too_large', 'File exceeds 10 MB.', 413);
+
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $sniff = finfo_file($finfo, $tmpPath);
+            finfo_close($finfo);
+            if ($sniff) $mime = $sniff;
+        }
+        $allowed = self::ALLOWED['photo'];
+        if (!isset($allowed[$mime])) {
+            Response::error('unsupported_media', 'Mime type not allowed: ' . $mime, 415);
+        }
+        $ext = $allowed[$mime];
+
+        $dir = self::userStorageDir();
+        foreach (glob($dir . '/' . $userId . '.*') ?: [] as $f) @unlink($f);
+        $path = $dir . '/' . $userId . '.' . $ext;
+        if (!@rename($tmpPath, $path)) {
+            if (!@copy($tmpPath, $path)) {
+                Response::error('write_failed', 'Could not write file to storage.', 500);
+            }
+            @unlink($tmpPath);
+        }
+        @chmod($path, 0644);
+
+        $pdo->prepare('UPDATE users SET has_photo = 1, updated_at = ? WHERE id = ?')
+            ->execute([Db::nowUtc(), $userId]);
+
+        Response::ok(['mime' => $mime, 'size' => $size, 'userId' => $userId, 'kind' => 'photo']);
+    }
+
+    /** GET|POST(/get) /api/users/{id}/media/photo — any authenticated user. */
+    public static function downloadUserMedia(string $userId, string $kind): void
+    {
+        Auth::requireUser();
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+        $dir = self::userStorageDir();
+        $candidates = glob($dir . '/' . $userId . '.*') ?: [];
+        if (!$candidates) {
+            // Self-heal: row claims has_photo=1 but there's no file.
+            Db::pdo()->prepare(
+                'UPDATE users SET has_photo = 0, updated_at = ? WHERE id = ? AND has_photo = 1'
+            )->execute([Db::nowUtc(), $userId]);
+            Response::error('not_found', 'Media not found.', 404);
+        }
+        $path = $candidates[0];
+        $ext  = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $mimeMap = [
+            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',  'webp' => 'image/webp',
+            'heic' => 'image/heic',
+        ];
+        $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($path));
+        header('Cache-Control: private, max-age=86400');
+        readfile($path);
+        exit;
+    }
+
+    /** DELETE /api/users/{id}/media/photo */
+    public static function deleteUserMedia(string $userId, string $kind): void
+    {
+        self::requireSelfOrAdmin($userId);
+        if ($kind !== 'photo') Response::error('bad_request', 'Unknown media kind.', 400);
+        $dir = self::userStorageDir();
+        foreach (glob($dir . '/' . $userId . '.*') ?: [] as $f) @unlink($f);
+        Db::pdo()->prepare('UPDATE users SET has_photo = 0, updated_at = ? WHERE id = ?')
+            ->execute([Db::nowUtc(), $userId]);
+        Response::ok();
+    }
+
     /** DELETE /api/stories/{id}/media/{kind} */
     public static function delete(string $storyId, string $kind): void
     {

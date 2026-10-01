@@ -342,7 +342,7 @@
     // Clickable navigation tiles
     const tiles = el('div', { class: 'tiles' }, [
       linkTile('Users',        cache.users.length,        '#users'),
-      linkTile('Cohorts',      cache.cohorts.length,      '#cohorts'),
+      linkTile('Academic years',      cache.cohorts.length,      '#cohorts'),
       linkTile('Courses',      cache.groups.length,       '#groups'),
       linkTile('Participants', cache.participants.length, '#participants'),
       linkTile('Sessions',     cache.sessions.length,     '#sessions'),
@@ -403,7 +403,7 @@
     const card = el('div', { class: 'card' });
     card.appendChild(el('div', { class: 'card__head' }, el('h2', null, 'Sample data (trainer training)')));
     card.appendChild(el('p', { class: 'small muted', style: 'margin-top:0' },
-      'Spin up a self-contained DEMO cohort full of fake participants, sessions, attendance, and stories so new trainers can practice in the PWA without touching real data. One click to create, one click to remove. The demo syncs down to every device.'));
+      'Spin up a self-contained DEMO academic year full of fake participants, sessions, attendance, and stories so new trainers can practice in the PWA without touching real data. One click to create, one click to remove. The demo syncs down to every device.'));
 
     const body = el('div');
     card.appendChild(body);
@@ -422,7 +422,7 @@
 
       if (st && st.present) {
         body.appendChild(el('p', null, [
-          el('strong', null, st.cohortName || 'DEMO cohort'),
+          el('strong', null, st.cohortName || 'DEMO academic year'),
           ' — ',
           el('span', { class: 'small muted' },
             st.courses + ' course(s) · ' + st.participants + ' participant(s) · ' +
@@ -433,7 +433,7 @@
           class: 'btn btn--sm',
           style: 'background:var(--danger); color:#fff',
           onClick: async () => {
-            if (!confirm('Remove the demo cohort and every fake course / session / participant / story under it? This soft-deletes everything (tombstones sync down to all devices).')) return;
+            if (!confirm('Remove the demo academic year and every fake course / session / participant / story under it? This soft-deletes everything (tombstones sync down to all devices).')) return;
             removeBtn.disabled = true; removeBtn.textContent = 'Removing…';
             try {
               const r = await API.demoRemove();
@@ -457,16 +457,16 @@
             seedBtn.disabled = true; seedBtn.textContent = 'Creating…';
             try {
               const r = await API.demoSeed();
-              toast('Demo cohort ready: ' + (r.participants || 0) + ' participants, ' +
+              toast('Demo academic year ready: ' + (r.participants || 0) + ' participants, ' +
                     (r.sessions || 0) + ' sessions.');
               await refresh();
               renderCurrent();
             } catch (err) {
               toast('Could not create demo data: ' + (err.message || 'server error'));
-              seedBtn.disabled = false; seedBtn.textContent = 'Create demo cohort';
+              seedBtn.disabled = false; seedBtn.textContent = 'Create demo academic year';
             }
           }
-        }, 'Create demo cohort');
+        }, 'Create demo academic year');
         body.appendChild(el('div', { class: 'row', style: 'gap:8px; margin-top:8px' }, [seedBtn]));
       }
     }
@@ -691,9 +691,9 @@
 
   function renderCohorts() {
     const main = $('#main'); main.innerHTML = '';
-    main.appendChild(sectionHeader('Cohorts', '+ New cohort', openCohortModal));
+    main.appendChild(sectionHeader('Academic years', '+ New academic year', openCohortModal));
     if (!cache.cohorts.length) {
-      main.appendChild(el('p', { class: 'empty' }, 'No cohorts yet. Click "+ New cohort" to create the first one.'));
+      main.appendChild(el('p', { class: 'empty' }, 'No academic years yet. Click "+ New academic year" to create the first one.'));
       return;
     }
     const groupsByCohort = groupBy(cache.groups, 'cohortId');
@@ -717,7 +717,7 @@
       ['Name', 'Region', 'Start', 'End', 'Courses', 'Participants', 'Author', 'Updated'],
       rows,
       (i) => openCohortModal(sortedCohorts[i]),
-      { searchPlaceholder: 'Search cohorts… (' + rows.length + ')', tableKey: 'cohorts' }
+      { searchPlaceholder: 'Search academic years… (' + rows.length + ')', tableKey: 'cohorts' }
     ));
   }
 
@@ -760,7 +760,7 @@
       onClick: runMoodleSyncFromCourses
     }));
     if (!cache.groups.length) {
-      main.appendChild(el('p', { class: 'empty' }, 'No courses yet. Click "+ New course" to add one inside a cohort.'));
+      main.appendChild(el('p', { class: 'empty' }, 'No courses yet. Click "+ New course" to add one inside an academic year.'));
       return;
     }
     const cohortsById = indexBy(cache.cohorts, 'id');
@@ -775,7 +775,7 @@
       fmtDate(g.updatedAt)
     ]);
     main.appendChild(renderTable(
-      ['Name', 'Cohort', 'Facilitators', 'Participants', 'Author', 'Updated'],
+      ['Name', 'Academic year', 'Facilitators', 'Participants', 'Author', 'Updated'],
       rows,
       (i) => openCourseModal(sortedGroups[i]),
       { searchPlaceholder: 'Search courses… (' + rows.length + ')', tableKey: 'courses' }
@@ -939,10 +939,10 @@
           el('input', { name: 'to', type: 'date', value: range.to, required: true })
         ]),
         el('div', { class: 'form-group', style: 'flex:1 1 220px; min-width:200px' }, [
-          el('label', null, 'Cohort (optional)'),
+          el('label', null, 'Academic year (optional)'),
           (function () {
             const sel = el('select', { name: 'cohortId' });
-            sel.appendChild(el('option', { value: '' }, 'All cohorts'));
+            sel.appendChild(el('option', { value: '' }, 'All academic years'));
             cache.cohorts.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach((c) => {
               sel.appendChild(el('option', { value: c.id }, c.name || '—'));
             });
@@ -1016,20 +1016,20 @@
     // ----- Per-cohort -----
     result.appendChild(el('div', { class: 'card' }, [
       el('div', { class: 'row between' }, [
-        el('h2', { style: 'margin:0' }, 'By cohort'),
+        el('h2', { style: 'margin:0' }, 'By academic year'),
         el('button', { class: 'btn btn--sm btn--ghost no-print', type: 'button',
           onClick: () => downloadCohortsCsv(d.cohorts) }, 'Download CSV')
       ]),
       (d.cohorts || []).length === 0
-        ? el('p', { class: 'empty' }, 'No cohorts in range.')
+        ? el('p', { class: 'empty' }, 'No academic years in range.')
         : renderTable(
-            ['Cohort', 'Region', 'Courses', 'Participants', 'Sessions', 'Attendance'],
+            ['Academic year', 'Region', 'Courses', 'Participants', 'Sessions', 'Attendance'],
             d.cohorts.map((c) => [
               c.name, c.region || '—', c.groups, c.participants, c.sessions,
               c.attendanceN > 0 ? c.attendancePct + '%' : '—'
             ]),
             null,
-            { searchPlaceholder: 'Filter cohorts… (' + d.cohorts.length + ')' }
+            { searchPlaceholder: 'Filter academic years… (' + d.cohorts.length + ')' }
           )
     ]));
 
@@ -1095,7 +1095,7 @@
 
   /** Build & trigger download of a CSV of the per-cohort table. */
   function downloadCohortsCsv(cohorts) {
-    const header = ['Cohort', 'Region', 'Courses', 'Participants', 'Sessions', 'AttendancePct', 'AttendanceN'];
+    const header = ['AcademicYear', 'Region', 'Courses', 'Participants', 'Sessions', 'AttendancePct', 'AttendanceN'];
     const lines = [header.join(',')];
     (cohorts || []).forEach((c) => {
       lines.push([
@@ -1107,7 +1107,7 @@
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url;
-    a.download = 'donor-report-cohorts.csv';
+    a.download = 'donor-report-academic-years.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -1156,7 +1156,7 @@
     const main = $('#main'); main.innerHTML = '';
     main.appendChild(el('h1', null, 'Audit log'));
     main.appendChild(el('p', { class: 'muted', style: 'margin-top:-6px' },
-      'Who created, edited, or deleted what — across cohorts, courses, sessions, participants, and stories. ' +
+      'Who created, edited, or deleted what — across academic years, courses, sessions, participants, and stories. ' +
       'Inferred from the existing author and timestamp columns; attendance toggles are excluded to keep the timeline readable.'));
 
     const saved = auditReadState();
@@ -1740,7 +1740,7 @@
     } catch (e) { toast(e.message); }
   }
   async function deleteUser(u) {
-    if (!confirm('Permanently delete ' + (u.name || u.email) + '?\n\nThis cannot be undone. Any cohorts, sessions, or stories they created will remain (with no author).')) return;
+    if (!confirm('Permanently delete ' + (u.name || u.email) + '?\n\nThis cannot be undone. Any academic years, sessions, or stories they created will remain (with no author).')) return;
     // Second confirmation as a small safety net
     const typed = prompt('Type DELETE to confirm:');
     if (typed !== 'DELETE') { toast('Cancelled'); return; }
@@ -1783,7 +1783,7 @@
   async function openCohortModal(existing) {
     const isEdit = !!existing;
     await openFormModal({
-      title: isEdit ? 'Edit cohort' : 'New cohort',
+      title: isEdit ? 'Edit academic year' : 'New academic year',
       fields: [
         { name: 'name',      label: 'Name',        type: 'text', required: true, value: isEdit ? existing.name : '',      placeholder: 'e.g. MAHAMA_2025' },
         { name: 'region',    label: 'Region',      type: 'text',                   value: isEdit ? existing.region : '',    placeholder: 'e.g. Mahama' },
@@ -1800,17 +1800,17 @@
           endDate:   v.endDate   || null,
         };
         await pushOne('cohorts', rec);
-        toast(isEdit ? 'Cohort updated' : 'Cohort created');
+        toast(isEdit ? 'Academic year updated' : 'Academic year created');
         await refresh();
         renderCohorts();
       },
       onDelete: isEdit ? async () => {
         await softDelete('cohorts', existing.id);
-        toast('Cohort deleted');
+        toast('Academic year deleted');
         await refresh();
         renderCohorts();
       } : null,
-      deleteConfirm: 'Delete this cohort? Its courses and participants will keep their data but will no longer be grouped under any cohort.',
+      deleteConfirm: 'Delete this academic year? Its courses and participants will keep their data but will no longer be grouped under any academic year.',
     });
   }
 
@@ -1846,7 +1846,7 @@
   async function openCourseModal(existing) {
     const isEdit = !!existing;
     if (!cache.cohorts.length && !isEdit) {
-      toast('Create a cohort first');
+      toast('Create an academic year first');
       return;
     }
     const cohortOpts = cache.cohorts.slice()
@@ -1863,7 +1863,7 @@
     await openFormModal({
       title: isEdit ? 'Edit course' : 'New course',
       fields: [
-        { name: 'cohortId',        label: 'Cohort',         type: 'select', options: cohortOpts, required: true, value: isEdit ? existing.cohortId : '' },
+        { name: 'cohortId',        label: 'Academic year',         type: 'select', options: cohortOpts, required: true, value: isEdit ? existing.cohortId : '' },
         { name: 'name',            label: 'Course name',    type: 'text', required: true, value: isEdit ? existing.name : '', placeholder: 'e.g. Audio History' },
         {
           name: 'facilitatorIds',

@@ -38,11 +38,15 @@
       out[e] = rows.filter((r) => r.dirty).map((r) => {
         const c = Object.assign({}, r);
         delete c.dirty;
-        // Strip blobs — v0.2.0 syncs metadata only
-        if (c.photo instanceof Blob) { c.hasPhoto = true; delete c.photo; }
-        else { c.hasPhoto = !!c.hasPhoto; }
-        if (c.audio instanceof Blob) { c.hasAudio = true; delete c.audio; }
-        else { c.hasAudio = !!c.hasAudio; }
+        // Strip blobs — media bytes go through the upload endpoints, not
+        // the JSON push. isBlobLike (not instanceof) because Safari can
+        // return IndexedDB blobs without the Blob prototype chain.
+        if (isBlobLike(c.photo)) c.hasPhoto = true;
+        if (isBlobLike(c.audio)) c.hasAudio = true;
+        c.hasPhoto = !!c.hasPhoto;
+        c.hasAudio = !!c.hasAudio;
+        delete c.photo;
+        delete c.audio;
         return c;
       });
     }
@@ -154,6 +158,21 @@
       }
       if (changed) await DB.putClean('sessions', sess);
     }
+    // v0.3.9a — participant avatars
+    const parts = await DB.all('participants');
+    for (const p of parts) {
+      if (p.hasPhoto && !isBlobLike(p.photo)) {
+        try {
+          p.photo = await window.API.fetchMediaOn('participants', p.id, 'photo');
+          p.photoUploaded = true;
+          await DB.putClean('participants', p);
+          fetched++;
+        } catch (e) {
+          if (e && e.status === 404) { p.hasPhoto = false; await DB.putClean('participants', p); }
+          failed++;
+        }
+      }
+    }
     return { fetched, failed };
   }
 
@@ -248,6 +267,23 @@
       }
       if (touched) await DB.putClean('sessions', sess);
     }
+    // v0.3.9a — participant avatars. Photo only.
+    const parts = await DB.all('participants');
+    for (const p of parts) {
+      if (isBlobLike(p.photo) && !p.photoUploaded) {
+        candidates++;
+        try {
+          await window.API.uploadMediaOn('participants', p.id, 'photo', p.photo);
+          p.photoUploaded = true;
+          await DB.putClean('participants', p);
+          uploaded++;
+          attempts.push({ id: p.id.slice(0,8), kind: 'participant-photo', size: p.photo.size, ok: true });
+        } catch (e) {
+          console.warn('[ubuntu30 sync] participant photo upload failed', p.id.slice(0, 8), e);
+          attempts.push({ id: p.id.slice(0,8), kind: 'participant-photo', size: p.photo.size, ok: false, error: String(e && e.message || e) });
+        }
+      }
+    }
     if (candidates > 0 || inspected.length > 0) {
       console.log('[ubuntu30 sync] uploadPendingMedia done — candidates:', candidates, 'uploaded:', uploaded);
     }
@@ -271,10 +307,11 @@
       await setState({ status: 'idle', error: 'not_authenticated' });
       return { ok: false, reason: 'not_authenticated' };
     }
-    if (!navigator.onLine) {
-      await setState({ status: 'offline', error: null });
-      return { ok: false, reason: 'offline' };
-    }
+    // Don't gate on navigator.onLine — it's unreliable in installed PWAs
+    // (iOS home-screen apps can report offline long after connectivity is
+    // back, so the gate silently blocked every push of offline-created
+    // records). We attempt the request instead; a real network failure is
+    // caught below and reported as 'offline'.
     await setState({ status: 'syncing', error: null });
     try {
       // 1. PUSH dirty metadata
@@ -312,6 +349,13 @@
       };
     } catch (err) {
       const code = err && err.code ? err.code : 'unknown';
+      // A failed fetch means we're actually offline (or the server is
+      // unreachable) — show the calm offline state, not a scary error.
+      // Dirty records stay queued and push on the next attempt.
+      if (code === 'network') {
+        await setState({ status: 'offline', error: null });
+        return { ok: false, reason: 'offline' };
+      }
       await setState({ status: 'error', error: code + ': ' + (err.message || err) });
       emit('error', err);
       return { ok: false, error: err };
@@ -320,6 +364,12 @@
 
   // Auto-sync when network reconnects
   window.addEventListener('online', () => { syncNow(); });
+  // Also sync whenever the app comes back to the foreground — installed
+  // PWAs don't reliably fire 'online' after connectivity returns, so this
+  // is the trigger that actually flushes records captured in the field.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncNow();
+  });
   // Best-effort periodic sync every 5 minutes while the app is open
   setInterval(() => {
     if (document.visibilityState === 'visible') syncNow();
@@ -329,9 +379,6 @@
   async function syncMediaOnly() {
     if (!window.API || !window.API.isAuthenticated()) {
       return { ok: false, reason: 'not_authenticated' };
-    }
-    if (!navigator.onLine) {
-      return { ok: false, reason: 'offline' };
     }
     try {
       const uploaded = await uploadPendingMedia();

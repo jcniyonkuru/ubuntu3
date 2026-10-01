@@ -1,6 +1,6 @@
 # Ubuntu 3.0 — M&E (v0.1)
 
-Une application web installable (PWA) pour le suivi des cohortes, sessions, présences et récits de l'Académie Ubuntu. Fonctionne **hors ligne**. Les données restent sur l'appareil tant que la synchronisation serveur n'est pas activée (prévue en v0.2).
+Une application web installable (PWA) pour le suivi des années académiques, sessions, présences et récits de l'Académie Ubuntu. Fonctionne **hors ligne**. Les données restent sur l'appareil tant que la synchronisation serveur n'est pas activée (prévue en v0.2).
 
 ## Contenu du dossier
 
@@ -89,8 +89,8 @@ Toutes les données sont conservées dans **IndexedDB** sur l'appareil :
 
 | Magasin       | Contenu                                                 |
 |---------------|---------------------------------------------------------|
-| `cohorts`     | Cohortes (nom, région, dates)                           |
-| `groups`      | Groupes (liés à une cohorte)                            |
+| `cohorts`     | Années académiques (nom, région, dates)                 |
+| `groups`      | Groupes (liés à une année académique)                   |
 | `participants`| Participants (liés à un groupe)                         |
 | `sessions`    | Sessions (date, thème, lieu, notes, groupe)             |
 | `attendance`  | Présences (session × participant, booléen)              |

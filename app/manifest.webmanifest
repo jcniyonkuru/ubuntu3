@@ -1,7 +1,7 @@
 {
   "name": "Ubuntu 3.0 — Suivi & Évaluation",
   "short_name": "Ubuntu 3.0",
-  "description": "Suivi des cohortes, sessions, récits et indicateurs pour l'Académie Ubuntu. Fonctionne hors ligne.",
+  "description": "Suivi des années académiques, sessions, récits et indicateurs pour l'Académie Ubuntu. Fonctionne hors ligne.",
   "lang": "fr",
   "dir": "ltr",
   "start_url": "./index.html",
